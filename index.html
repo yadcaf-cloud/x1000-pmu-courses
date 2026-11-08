@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>X1000 PMU COURSES</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0b1220;color:white;font-family:Arial,sans-serif}
+header{background:#132440;padding:28px 15px;text-align:center}
+h1{color:#38d9ff;margin:0}
+header p{color:#cbd5e1}
+main{max-width:950px;margin:auto;padding:18px}
+.card{background:#192b45;padding:20px;border-radius:14px;margin:15px 0;border:1px solid #314762}
+h2{color:#38d9ff}
+button{background:#087cba;color:white;border:0;border-radius:8px;padding:12px 18px;cursor:pointer}
+.status{color:#fbbf24}
+footer{text-align:center;padding:25px;color:#94a3b8}
+</style>
+</head>
+<body>
+<header>
+<h1>🏇 X1000 PMU COURSES</h1>
+<p>Courses hippiques • Partants • Analyses • Résultats</p>
+</header>
+<main>
+<section class="card">
+<h2>📅 Réunions du jour</h2>
+<p class="status">En attente de données officielles.</p>
+</section>
+<section class="card">
+<h2>🐎 Courses et partants</h2>
+<p>Programme des réunions françaises et internationales.</p>
+</section>
+<section class="card">
+<h2>🧠 Intelligence X1000</h2>
+<p>Analyses indépendantes des moteurs M1 à M5.</p>
+<p class="status">Connexion aux moteurs à configurer.</p>
+</section>
+<section class="card">
+<h2>🏆 Arrivées et résultats</h2>
+<p>Résultats officiels et historiques des courses.</p>
+</section>
+<section class="card">
+<h2>🔄 Actualisation</h2>
+<button onclick="location.reload()">Actualiser la page</button>
+<p id="date"></p>
+</section>
+</main>
+<footer>X1000 PMU COURSES — Tableau de bord</footer>
+<script>
+document.getElementById("date").textContent =
+"Dernier chargement : " + new Date().toLocaleString("fr-FR");
+</script>
+</body>
+</html>
