@@ -1,11 +1,15 @@
-"""API X1000 PMU COURSES V65."""
+"""X1000 PMU COURSES V66 — API lecture seule."""
+
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from moteurs import MOTEURS
+from collecte_pmu import collecter, CollecteErreur
+
 app = FastAPI(
     title="X1000 PMU COURSES",
-    version="65.0"
+    version="66.0"
 )
 
 origines = [
@@ -24,35 +28,66 @@ if origines:
         allow_headers=["Accept"],
     )
 
+
 @app.get("/api/status")
 def status():
     return {
         "projet": "X1000 PMU COURSES",
-        "version": "V65",
+        "version": "V66",
         "mode": "LECTURE_SEULE",
         "moteurs": {
-            f"M{i}": "NON_VALIDÉ"
-            for i in range(1, 6)
+            m.nom: "EN_ATTENTE_VALIDATION"
+            for m in MOTEURS
         },
         "production_port_preserve": 8765,
-        "collecte_active": False,
+        "source_configuree": bool(
+            os.getenv("X1000_SOURCE_URL", "").strip()
+        ),
+        "collecte_automatique": False,
+        "fige_automatique": False,
     }
+
 
 @app.get("/api/courses")
 def courses():
-    return {
-        "courses": [],
-        "statut": "SOURCE_NON_CONNECTEE"
-    }
+    try:
+        resultat = collecter()
+
+        return {
+            "courses": resultat["courses"],
+            "statut": resultat["statut"],
+            "source": resultat["source"],
+            "donnees_verifiees": False,
+        }
+
+    except CollecteErreur:
+        return {
+            "courses": [],
+            "statut": "ERREUR_COLLECTE",
+            "source": None,
+            "donnees_verifiees": False,
+        }
+
 
 @app.get("/api/selections")
 def selections():
-    return {"selections": []}
+    return {
+        "selections": [],
+        "statut": "AUCUNE_SELECTION_PUBLIEE",
+    }
+
 
 @app.get("/api/figes")
 def figes():
-    return {"figes": []}
+    return {
+        "figes": [],
+        "statut": "ARCHIVES_NON_CONNECTEES",
+    }
+
 
 @app.get("/api/audits")
 def audits():
-    return {"audits": []}
+    return {
+        "audits": [],
+        "statut": "AUDITS_NON_CONNECTES",
+    }
