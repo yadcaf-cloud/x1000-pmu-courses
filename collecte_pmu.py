@@ -1,380 +1,214 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+"""X1000 PMU COURSES V67 — API contrôlée, lecture seule.
 
-"""
-X1000 PMU COURSES V66
-COLLECTE PMU REELLE - LECTURE SEULE
-
-Compatible avec api.py V66.
-
-SECURITE :
-- Aucune collecte sans source configuree.
-- HTTPS obligatoire.
-- Domaines explicitement autorises.
-- Refus des IP privees et locales.
-- Redirections interdites.
-- Taille maximale de reponse.
-- Aucune ecriture dans les archives.
-- Aucun pronostic, pari ou FIGE.
-- Aucun commit, push ou deploiement.
+Aucun pronostic inventé.
+Aucun FIGÉ automatique.
+Aucune modification des archives.
+Port de production 8765 préservé.
 """
 
-import ipaddress
-import json
 import os
-import socket
-import urllib.error
-import urllib.request
+import logging
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
-from datetime import datetime, timezone
-from urllib.parse import urlsplit
+from moteurs import MOTEURS
+from collecte_pmu import collecter, CollecteErreur
+
+VERSION = "V67"
+PORT_PRODUCTION = 8765
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("x1000-pmu-courses")
+
+app = FastAPI(
+    title="X1000 PMU COURSES",
+    version="67.0",
+    description="API de consultation et diagnostic contrôlé",
+)
+
+# Origine GitHub Pages autorisée.
+# D'autres origines peuvent être ajoutées par variable
+# d'environnement, sans utiliser de joker.
+origines = {
+    "https://yadcaf-cloud.github.io"
+}
+
+origines.update(
+    x.strip().rstrip("/")
+    for x in os.getenv(
+        "X1000_CORS_ORIGINS", ""
+    ).split(",")
+    if x.strip()
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=sorted(origines),
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Accept"],
+)
 
 
-VERSION = "V66"
-PROJET = "X1000 PMU COURSES"
+def moteurs_disponibles():
+    resultat = {}
 
-MAX_BYTES = 2_000_000
-TIMEOUT = 10
+    for moteur in MOTEURS:
+        nom = getattr(moteur, "nom", None)
 
-# Configuration par variables d'environnement.
-#
-# X1000_SOURCE_URL :
-# URL HTTPS d'une source autorisee.
-#
-# X1000_ALLOWED_HOSTS :
-# Domaines explicitement autorises,
-# separes par des virgules.
-#
-# Exemple de format uniquement :
-#
-# X1000_SOURCE_URL =
-#   https://source.example/endpoint
-#
-# X1000_ALLOWED_HOSTS =
-#   source.example
-#
-# Aucune source reelle n'est activee
-# automatiquement.
+        if not isinstance(nom, str) or not nom:
+            continue
+
+        resultat[nom] = "EN_ATTENTE_VALIDATION"
+
+    return resultat
 
 
-class CollecteErreur(Exception):
-    """Erreur de collecte controlee."""
-    pass
-
-
-def configuration():
-    """Lire la configuration sans rien modifier."""
-
-    url = os.getenv(
-        "X1000_SOURCE_URL", ""
-    ).strip()
-
-    hosts = {
-        host.strip().lower().rstrip(".")
-        for host in os.getenv(
-            "X1000_ALLOWED_HOSTS", ""
-        ).split(",")
-        if host.strip()
-    }
-
+@app.get("/health")
+def health():
     return {
-        "url": url,
-        "hosts": hosts,
-        "active": bool(url and hosts),
-    }
-
-
-def verifier_url(url):
-    """Verifier la destination HTTPS."""
-
-    if not isinstance(url, str):
-        raise CollecteErreur(
-            "URL invalide"
-        )
-
-    try:
-        parsed = urlsplit(url)
-        host = (
-            parsed.hostname or ""
-        ).lower().rstrip(".")
-        port = parsed.port
-    except ValueError as exc:
-        raise CollecteErreur(
-            "Adresse URL invalide"
-        ) from exc
-
-    config = configuration()
-
-    if parsed.scheme != "https":
-        raise CollecteErreur(
-            "HTTPS obligatoire"
-        )
-
-    if not host:
-        raise CollecteErreur(
-            "Domaine absent"
-        )
-
-    if host not in config["hosts"]:
-        raise CollecteErreur(
-            "Domaine non autorise"
-        )
-
-    if parsed.username or parsed.password:
-        raise CollecteErreur(
-            "Identifiants URL interdits"
-        )
-
-    if port not in (None, 443):
-        raise CollecteErreur(
-            "Port non autorise"
-        )
-
-    if parsed.fragment:
-        raise CollecteErreur(
-            "Fragment URL interdit"
-        )
-
-    try:
-        if ipaddress.ip_address(host):
-            raise CollecteErreur(
-                "Adresse IP directe interdite"
-            )
-    except ValueError:
-        pass
-
-    try:
-        addresses = socket.getaddrinfo(
-            host,
-            443,
-            type=socket.SOCK_STREAM
-        )
-    except socket.gaierror as exc:
-        raise CollecteErreur(
-            "Resolution DNS impossible"
-        ) from exc
-
-    if not addresses:
-        raise CollecteErreur(
-            "Aucune adresse DNS"
-        )
-
-    for item in addresses:
-        try:
-            ip = ipaddress.ip_address(
-                item[4][0]
-            )
-        except ValueError as exc:
-            raise CollecteErreur(
-                "Adresse DNS invalide"
-            ) from exc
-
-        if not ip.is_global:
-            raise CollecteErreur(
-                "Adresse non publique interdite"
-            )
-
-    return True
-
-
-class SansRedirection(
-    urllib.request.HTTPRedirectHandler
-):
-    """Interdire toute redirection HTTP."""
-
-    def redirect_request(
-        self,
-        req,
-        fp,
-        code,
-        msg,
-        headers,
-        newurl
-    ):
-        raise CollecteErreur(
-            "Redirection interdite"
-        )
-
-
-def verifier_courses(courses):
-    """
-    Verifier uniquement la structure JSON.
-
-    Cette verification ne constitue pas
-    une certification sportive ou officielle.
-    """
-
-    if not isinstance(courses, list):
-        raise CollecteErreur(
-            "Liste des courses invalide"
-        )
-
-    for index, course in enumerate(courses):
-        if not isinstance(course, dict):
-            raise CollecteErreur(
-                f"Course invalide a l'index {index}"
-            )
-
-    return courses
-
-
-def collecter():
-    """
-    Collecter les donnees d'une source
-    explicitement configuree.
-
-    Retour compatible avec api.py V66 :
-    - statut
-    - courses
-    - source
-
-    Aucun fichier n'est modifie.
-    """
-
-    config = configuration()
-
-    if not config["active"]:
-        return {
-            "statut": "SOURCE_NON_CONFIGUREE",
-            "courses": [],
-            "source": None,
-        }
-
-    url = config["url"]
-
-    verifier_url(url)
-
-    # Le proxy de l'environnement est desactive
-    # pour limiter les chemins reseau implicites.
-    opener = urllib.request.build_opener(
-        urllib.request.ProxyHandler({}),
-        SansRedirection()
-    )
-
-    request = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/json",
-            "User-Agent":
-                "X1000-PMU-COURSES-V66"
-        },
-        method="GET"
-    )
-
-    try:
-        with opener.open(
-            request,
-            timeout=TIMEOUT
-        ) as response:
-
-            if response.status != 200:
-                raise CollecteErreur(
-                    "Reponse HTTP non valide"
-                )
-
-            content_type = (
-                response.headers.get(
-                    "Content-Type", ""
-                ).lower()
-            )
-
-            if (
-                "application/json" not in content_type
-                and "+json" not in content_type
-            ):
-                raise CollecteErreur(
-                    "Reponse non JSON"
-                )
-
-            data = response.read(
-                MAX_BYTES + 1
-            )
-
-    except CollecteErreur:
-        raise
-
-    except (
-        urllib.error.URLError,
-        OSError,
-        TimeoutError
-    ) as exc:
-        raise CollecteErreur(
-            "Collecte impossible"
-        ) from exc
-
-    if len(data) > MAX_BYTES:
-        raise CollecteErreur(
-            "Reponse trop volumineuse"
-        )
-
-    try:
-        payload = json.loads(
-            data.decode("utf-8")
-        )
-    except (
-        ValueError,
-        UnicodeError
-    ) as exc:
-        raise CollecteErreur(
-            "JSON invalide"
-        ) from exc
-
-    if isinstance(payload, list):
-        courses = payload
-
-    elif isinstance(payload, dict):
-        courses = payload.get(
-            "courses", []
-        )
-
-    else:
-        raise CollecteErreur(
-            "Format JSON non reconnu"
-        )
-
-    courses = verifier_courses(
-        courses
-    )
-
-    return {
-        "statut":
-            "DONNEES_RECUES_NON_VERIFIEES",
-        "courses": courses,
-        "source": url,
+        "status": "ok",
+        "version": VERSION,
     }
 
 
-def diagnostic():
-    """Diagnostic sans declencher de collecte."""
-
-    config = configuration()
-
+@app.get("/api/status")
+def status():
     return {
-        "projet": PROJET,
+        "projet": "X1000 PMU COURSES",
         "version": VERSION,
         "mode": "LECTURE_SEULE",
+        "moteurs": moteurs_disponibles(),
+        "production_port_preserve": PORT_PRODUCTION,
         "source_configuree": bool(
-            config["url"]
-        ),
-        "domaines_autorises": sorted(
-            config["hosts"]
+            os.getenv("X1000_SOURCE_URL", "").strip()
         ),
         "collecte_automatique": False,
-        "pronostics_generes": False,
-        "paris_generes": False,
-        "figes_modifies": False,
+        "fige_automatique": False,
         "archives_modifiees": False,
-        "port_production": 8765,
-        "horodatage": datetime.now(
-            timezone.utc
-        ).isoformat(),
+    }
+
+
+@app.get("/api/engines")
+def engines():
+    return {
+        "moteurs": moteurs_disponibles(),
+        "nombre_detecte": len(moteurs_disponibles()),
+        "execution_validee": False,
+    }
+
+
+@app.get("/api/courses")
+def courses():
+    try:
+        resultat = collecter()
+
+        if not isinstance(resultat, dict):
+            raise CollecteErreur(
+                "Format de collecte invalide"
+            )
+
+        donnees = resultat.get("courses", [])
+
+        if not isinstance(donnees, list):
+            raise CollecteErreur(
+                "Liste des courses invalide"
+            )
+
+        return {
+            "courses": donnees,
+            "statut": resultat.get(
+                "statut", "NON_VERIFIE"
+            ),
+            "source": resultat.get("source"),
+            "donnees_verifiees": False,
+        }
+
+    except CollecteErreur as exc:
+        logger.warning(
+            "Collecte PMU indisponible: %s",
+            type(exc).__name__,
+        )
+
+        return {
+            "courses": [],
+            "statut": "ERREUR_COLLECTE",
+            "source": None,
+            "donnees_verifiees": False,
+        }
+
+
+@app.get("/api/selections")
+def selections():
+    return {
+        "selections": [],
+        "statut": "SOURCE_NON_CONNECTEE",
+        "donnees_verifiees": False,
+    }
+
+
+@app.get("/api/figes")
+def figes():
+    return {
+        "figes": [],
+        "statut": "ARCHIVES_NON_CONNECTEES",
+        "donnees_verifiees": False,
+    }
+
+
+@app.get("/api/audits")
+def audits():
+    return {
+        "audits": [],
+        "statut": "AUDITS_NON_CONNECTES",
+        "donnees_verifiees": False,
+    }
+
+
+class AnalyseRequete(BaseModel):
+    course_id: str = Field(
+        min_length=1,
+        max_length=128,
+    )
+
+
+@app.post("/api/analyze")
+def analyze(requete: AnalyseRequete):
+    # Aucun appel aux moteurs tant que leur contrat
+    # réel et les garanties de lecture seule
+    # ne sont pas vérifiés.
+    raise HTTPException(
+        status_code=503,
+        detail={
+            "statut": "ANALYSE_NON_CONNECTEE",
+            "course_id": requete.course_id,
+            "moteurs": moteurs_disponibles(),
+            "pronostic_genere": False,
+            "fige": False,
+            "message": (
+                "Contrat du noyau central à valider "
+                "avant activation de l'analyse."
+            ),
+        },
+    )
+
+
+@app.get("/api/analyze")
+def analyze_information():
+    return {
+        "statut": "ANALYSE_NON_CONNECTEE",
+        "methode_prevue": "POST",
+        "execution_validee": False,
+        "pronostic_genere": False,
+        "fige": False,
     }
 
 
 if __name__ == "__main__":
+    import uvicorn
 
-    print(json.dumps(
-        diagnostic(),
-        ensure_ascii=False,
-        indent=2
-    ))
+    uvicorn.run(
+        app,
+        host="127.0.0.1",
+        port=PORT_PRODUCTION,
+    )
