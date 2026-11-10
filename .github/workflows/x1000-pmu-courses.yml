@@ -1,6 +1,6 @@
-name: X1000 PMU COURSES - Preparation V59
+name: X1000 PMU COURSES - Preparation V63
 
-run-name: X1000 PMU COURSES V59 - Diagnostic controle
+run-name: X1000 PMU COURSES V63 - Diagnostic controle
 
 on:
   workflow_dispatch:
@@ -21,14 +21,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: x1000-v59-${{ github.ref }}
+  group: x1000-v63-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   diagnostic:
-    name: Diagnostic X1000 PMU COURSES
+    name: Diagnostic X1000 V63
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     defaults:
       run:
@@ -38,11 +38,14 @@ jobs:
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
       X1000_PROJECT: x1000-pmu-courses
-      X1000_VERSION: V59
+      X1000_VERSION: V63
       X1000_PRODUCTION_PORT: "8765"
+      X1000_TEST_PORT: "18765"
+      X1000_DIAGNOSTIC_ONLY: "1"
+      X1000_DISABLE_WRITES: "1"
 
     steps:
-      - name: Recuperer le depot en lecture seule
+      - name: Recuperer le depot
         uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -53,32 +56,19 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Initialiser le diagnostic
+      - name: Verifier le depot
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/x1000-v59"
-          echo "Projet : $X1000_PROJECT"
-          echo "Version : $X1000_VERSION"
-          echo "Depot : $GITHUB_REPOSITORY"
-          echo "Branche : $GITHUB_REF_NAME"
+          test "$GITHUB_REPOSITORY" = \
+            "yadcaf-cloud/x1000-pmu-courses"
+          test -d .git
           python --version
+          git status --short
+          mkdir -p "$RUNNER_TEMP/x1000-v63"
 
-      - name: Verifier identite du depot
-        run: |
-          set -euo pipefail
-          case "$GITHUB_REPOSITORY" in
-            */x1000-pmu-courses)
-              echo "Depot X1000 PMU COURSES confirme"
-              ;;
-            *)
-              echo "::error::Depot incorrect"
-              exit 1
-              ;;
-          esac
-
-      - name: Diagnostic complet V59
+      - name: Diagnostic complet V63
         env:
-          REPORT_DIR: ${{ runner.temp }}/x1000-v59
+          REPORT_DIR: ${{ runner.temp }}/x1000-v63
         run: |
           set -euo pipefail
 
@@ -95,8 +85,16 @@ jobs:
           import sys
 
           ROOT = pathlib.Path.cwd().resolve()
-          OUT = pathlib.Path(os.environ["REPORT_DIR"])
+          OUT = pathlib.Path(
+              os.environ["REPORT_DIR"]
+          )
           OUT.mkdir(parents=True, exist_ok=True)
+
+          EXCLUDED = {
+              ".git", ".venv", "venv",
+              "__pycache__", ".pytest_cache",
+              ".tox", "node_modules"
+          }
 
           PROTECTED = (
               "fige", "figé", "archive",
@@ -104,57 +102,82 @@ jobs:
               "audit", "resultat"
           )
 
-          def digest(path):
+          EXPECTED_ROUTES = [
+              "/api/status",
+              "/api/courses",
+              "/api/selections",
+              "/api/figes",
+              "/api/audits"
+          ]
+
+          CENTRAL_NAMES = {
+              "central.py",
+              "coordination_x1000.py",
+              "integration_x1000.py",
+              "coordinateur.py",
+              "orchestrateur.py"
+          }
+
+          def sha256(path):
               h = hashlib.sha256()
               with path.open("rb") as stream:
                   for chunk in iter(
-                      lambda: stream.read(65536), b""
+                      lambda: stream.read(65536),
+                      b""
                   ):
                       h.update(chunk)
               return h.hexdigest()
 
-          def is_protected(path):
-              return any(
-                  word in str(path).lower()
-                  for word in PROTECTED
-              )
-
-          def source_files():
-              excluded = {
-                  ".git", ".venv", "venv",
-                  "node_modules", "__pycache__",
-                  ".tox", ".pytest_cache"
-              }
-              for directory, dirs, files in os.walk(ROOT):
+          def inventory():
+              result = {}
+              for directory, dirs, files in os.walk(
+                  ROOT, followlinks=False
+              ):
                   dirs[:] = [
                       d for d in dirs
-                      if d not in excluded
+                      if d not in EXCLUDED
+                      and not (
+                          pathlib.Path(directory) / d
+                      ).is_symlink()
                   ]
                   for filename in files:
                       p = pathlib.Path(directory) / filename
-                      if p.is_symlink():
+                      if not p.is_file() or p.is_symlink():
                           continue
-                      yield p
+                      rel = p.relative_to(ROOT).as_posix()
+                      result[rel] = sha256(p)
+              return result
 
-          files = sorted(
-              source_files(),
-              key=lambda p: str(p)
-          )
+          def is_protected(name):
+              return any(
+                  word in name.lower()
+                  for word in PROTECTED
+              )
 
-          pyfiles = [
-              p for p in files
-              if p.suffix == ".py"
-          ]
+          def git(*args):
+              p = subprocess.run(
+                  ["git", *args],
+                  cwd=ROOT,
+                  capture_output=True,
+                  text=True,
+                  timeout=15,
+                  check=False
+              )
+              return {
+                  "code": p.returncode,
+                  "stdout": p.stdout.strip(),
+                  "stderr": p.stderr.strip()
+              }
 
+          before = inventory()
           protected_before = {
-              str(p.relative_to(ROOT)): digest(p)
-              for p in files
-              if is_protected(p)
+              k: v for k, v in before.items()
+              if is_protected(k)
           }
 
           report = {
               "project": "X1000 PMU COURSES",
-              "version": "V59",
+              "version": "V63",
               "timestamp_utc":
                   datetime.datetime.now(
                       datetime.timezone.utc
@@ -165,125 +188,141 @@ jobs:
               "mode": "diagnostic_read_only",
               "production_port": 8765,
               "production_port_tested": False,
-              "python_files": len(pyfiles),
-              "syntax": {},
+              "temporary_port": 18765,
               "engines": {},
               "central": {},
+              "syntax": {},
               "api": {},
-              "pmu_sources": {},
-              "protected": {},
+              "sources": {},
+              "dependencies": {},
+              "integrity": {},
+              "rollback": {},
               "git": {},
-              "limitations": []
+              "warnings": [],
+              "errors": []
           }
 
-          # 1. Syntaxe Python sans execution.
+          report["git"]["before"] = git(
+              "status", "--porcelain"
+          )
+          report["git"]["head"] = git(
+              "rev-parse", "HEAD"
+          )
+
+          # Analyse syntaxique
+          pyfiles = sorted(
+              p for p in before
+              if p.endswith(".py")
+          )
           trees = {}
-          for p in pyfiles:
-              rel = str(p.relative_to(ROOT))
+
+          for path in pyfiles:
               try:
-                  content = p.read_text(
+                  source = (ROOT / path).read_text(
                       encoding="utf-8-sig"
                   )
-                  tree = ast.parse(
-                      content, filename=rel
+                  trees[path] = ast.parse(
+                      source, filename=path
                   )
-                  trees[rel] = tree
-                  report["syntax"][rel] = "OK"
+                  report["syntax"][path] = "OK"
               except Exception as exc:
-                  report["syntax"][rel] = (
-                      f"ERROR: {type(exc).__name__}: {exc}"
+                  report["syntax"][path] = str(exc)
+                  report["errors"].append(
+                      "Erreur syntaxe : " + path
                   )
 
-          # 2. Decouverte non arbitraire M1-M5.
+          # Moteurs M1-M5
           for number in range(1, 6):
               name = f"M{number}"
-              matches = []
               pattern = re.compile(
                   rf"(?<![a-z0-9])m{number}"
                   rf"(?![a-z0-9])",
                   re.IGNORECASE
               )
 
-              for p in pyfiles:
-                  rel = str(p.relative_to(ROOT))
-                  if pattern.search(rel):
-                      matches.append(rel)
+              candidates = [
+                  p for p in pyfiles
+                  if pattern.search(p)
+              ]
 
-              status = (
-                  "absent" if not matches
-                  else "candidate_unique"
-                  if len(matches) == 1
-                  else "ambiguous"
-              )
+              contracts = {}
+              for path in candidates:
+                  tree = trees.get(path)
+                  if tree is None:
+                      continue
+                  contracts[path] = {
+                      "functions": [
+                          n.name for n in tree.body
+                          if isinstance(
+                              n,
+                              (ast.FunctionDef,
+                               ast.AsyncFunctionDef)
+                          )
+                      ],
+                      "classes": [
+                          n.name for n in tree.body
+                          if isinstance(n, ast.ClassDef)
+                      ]
+                  }
 
               report["engines"][name] = {
-                  "status": status,
-                  "candidates": matches,
+                  "candidates": candidates,
+                  "status": (
+                      "absent" if not candidates
+                      else "candidate_unique"
+                      if len(candidates) == 1
+                      else "ambiguous"
+                  ),
+                  "contracts": contracts,
                   "executed": False,
-                  "note": (
-                      "Identification statique uniquement"
-                  )
+                  "validated": False
               }
 
-          # 3. Recherche du noyau central.
-          central_names = {
-              "central.py",
-              "coordination_x1000.py",
-              "integration_x1000.py",
-              "coordinateur.py",
-              "orchestrateur.py"
-          }
-
-          candidates = [
-              str(p.relative_to(ROOT))
-              for p in pyfiles
-              if p.name.lower() in central_names
+          # Noyau central
+          central = [
+              p for p in pyfiles
+              if pathlib.Path(p).name.lower()
+              in CENTRAL_NAMES
           ]
 
           report["central"] = {
-              "candidates": candidates,
+              "candidates": central,
               "status": (
-                  "absent" if not candidates
+                  "absent" if not central
                   else "candidate_unique"
-                  if len(candidates) == 1
+                  if len(central) == 1
                   else "ambiguous"
               ),
-              "executed": False
+              "executed": False,
+              "validated": False
           }
 
-          # 4. Inventaire des routes declarees.
-          routes = set()
-          api_candidates = []
+          # Routes API
+          routes = {}
+          api_files = set()
 
-          for rel, tree in trees.items():
-              found_api = False
-
+          for path, tree in trees.items():
               for node in ast.walk(tree):
                   if not isinstance(
-                      node, (ast.FunctionDef,
-                             ast.AsyncFunctionDef)
+                      node,
+                      (ast.FunctionDef,
+                       ast.AsyncFunctionDef)
                   ):
                       continue
 
                   for dec in node.decorator_list:
+                      if not isinstance(dec, ast.Call):
+                          continue
                       if not isinstance(
-                          dec, ast.Call
+                          dec.func, ast.Attribute
                       ):
                           continue
-
-                      func = dec.func
-                      if not isinstance(
-                          func, ast.Attribute
-                      ):
-                          continue
-
-                      if func.attr.lower() not in {
+                      if dec.func.attr.lower() not in {
                           "get", "post", "put",
                           "delete", "patch",
                           "route", "api_route"
                       }:
                           continue
-
                       if not dec.args:
                           continue
 
@@ -292,136 +331,132 @@ jobs:
                           isinstance(arg, ast.Constant)
                           and isinstance(arg.value, str)
                       ):
-                          routes.add(arg.value)
-                          found_api = True
-
-              if found_api:
-                  api_candidates.append(rel)
-
-          expected = [
-              "/api/status",
-              "/api/courses",
-              "/api/selections",
-              "/api/figes",
-              "/api/audits"
-          ]
+                          api_files.add(path)
+                          routes.setdefault(
+                              arg.value, []
+                          ).append({
+                              "file": path,
+                              "handler": node.name,
+                              "method": dec.func.attr
+                          })
 
           report["api"] = {
-              "files": api_candidates,
-              "declared_routes": sorted(routes),
-              "expected_routes": expected,
+              "files": sorted(api_files),
+              "declared_routes": routes,
+              "expected_routes": EXPECTED_ROUTES,
               "route_presence": {
-                  route: route in routes
-                  for route in expected
+                  r: r in routes
+                  for r in EXPECTED_ROUTES
               },
               "http_tested": False,
-              "asgi_tested": False
+              "asgi_tested": False,
+              "reason":
+                  "Contrat ASGI non valide; "
+                  "aucun import applicatif dangereux"
           }
 
-          # 5. Inventaire des domaines hippiques
-          #    declares dans le code source.
+          # Sources hippiques declarees
           domains = set()
-          domain_re = re.compile(
-              r"https?://"
-              r"([a-zA-Z0-9.-]+)"
+          domain_pattern = re.compile(
+              r"https?://([a-zA-Z0-9.-]+)"
           )
 
-          for p in pyfiles:
-              try:
-                  content = p.read_text(
-                      encoding="utf-8",
-                      errors="replace"
-                  )
-                  domains.update(
-                      domain_re.findall(content)
-                  )
-              except OSError:
-                  pass
+          for path in pyfiles:
+              content = (ROOT / path).read_text(
+                  encoding="utf-8",
+                  errors="replace"
+              )
+              domains.update(
+                  domain_pattern.findall(content)
+              )
 
-          report["pmu_sources"] = {
+          report["sources"] = {
               "declared_domains": sorted(domains),
               "authorized_domains": [],
-              "http_tested": False,
-              "status": "authorization_not_verified",
-              "note": (
-                  "Aucun appel reseau automatique. "
-                  "Une URL presente dans le code "
-                  "ne prouve pas son autorisation."
-              )
+              "authorization_verified": False,
+              "http_tested": False
           }
 
-          # 6. Inventaire des dependances.
-          dependencies = [
-              str(p.relative_to(ROOT))
-              for p in files
+          # Dependances
+          manifests = [
+              p for p in before
               if (
-                  p.name.startswith("requirements")
-                  and p.suffix == ".txt"
+                  pathlib.Path(p).name.startswith(
+                      "requirements"
+                  )
+                  and p.endswith(".txt")
               )
-              or p.name == "pyproject.toml"
+              or pathlib.Path(p).name == (
+                  "pyproject.toml"
+              )
           ]
 
           report["dependencies"] = {
-              "manifests": dependencies,
+              "manifests": manifests,
               "installed": False
           }
 
-          # 7. Etat Git sans modification.
-          def git(*args):
-              result = subprocess.run(
-                  ["git", *args],
-                  capture_output=True,
-                  text=True,
-                  timeout=15,
-                  check=False
+          # Port temporaire uniquement
+          try:
+              with socket.socket(
+                  socket.AF_INET,
+                  socket.SOCK_STREAM
+              ) as sock:
+                  sock.bind(
+                      ("127.0.0.1", 18765)
+                  )
+              report["api"]["temporary_port_ok"] = True
+          except OSError as exc:
+              report["api"]["temporary_port_ok"] = False
+              report["warnings"].append(
+                  "Port temporaire : " + str(exc)
               )
-              return {
-                  "returncode": result.returncode,
-                  "stdout": result.stdout.strip(),
-                  "stderr": result.stderr.strip()
-              }
 
-          report["git"]["status"] = git(
+          # Integrite
+          after = inventory()
+          protected_after = {
+              k: v for k, v in after.items()
+              if is_protected(k)
+          }
+
+          protected_ok = (
+              protected_before == protected_after
+          )
+          repository_ok = before == after
+
+          report["integrity"] = {
+              "protected_before": protected_before,
+              "protected_after": protected_after,
+              "protected_unchanged": protected_ok,
+              "repository_unchanged": repository_ok,
+              "files_before": len(before),
+              "files_after": len(after)
+          }
+
+          report["rollback"] = {
+              "required": False,
+              "performed": False,
+              "reason":
+                  "Aucune ecriture dans le depot"
+          }
+
+          report["git"]["after"] = git(
               "status", "--porcelain"
           )
-          report["git"]["branch"] = git(
-              "branch", "--show-current"
-          )
-          report["git"]["head"] = git(
-              "rev-parse", "HEAD"
-          )
 
-          # 8. Controle des donnees protegees.
-          protected_after = {
-              str(p.relative_to(ROOT)): digest(p)
-              for p in source_files()
-              if is_protected(p)
-          }
-
-          report["protected"] = {
-              "files_count": len(protected_before),
-              "before": protected_before,
-              "after": protected_after,
-              "integrity_ok": (
-                  protected_before == protected_after
+          if not protected_ok:
+              report["errors"].append(
+                  "Integrite des donnees protegees"
               )
-          }
 
-          # 9. Limites explicites.
-          report["limitations"] = [
-              "Moteurs non executes",
-              "Coordination non executee",
-              "Routes API non testees en HTTP",
-              "Sources PMU non interrogees",
-              "Port 8765 non teste",
-              "Aucune simulation de pronostic",
-              "Aucune modification du depot",
-              "Aucun rollback necessaire en lecture seule"
-          ]
+          if not repository_ok:
+              report["errors"].append(
+                  "Depot modifie pendant le diagnostic"
+              )
 
-          # 10. Rapport JSON hors depot.
-          path = OUT / "rapport-v59.json"
-          path.write_text(
+          # Rapport JSON
+          output = OUT / "rapport-v63.json"
+          output.write_text(
               json.dumps(
                   report,
                   ensure_ascii=False,
@@ -430,14 +465,19 @@ jobs:
               encoding="utf-8"
           )
 
-          print("\n=== X1000 PMU COURSES V59 ===")
-          print("Fichiers Python :", len(pyfiles))
+          (OUT / "rapport-v63.sha256").write_text(
+              sha256(output)
+              + "  rapport-v63.json\n",
+              encoding="utf-8"
+          )
+
+          print("=== X1000 PMU COURSES V63 ===")
 
           for name, data in report["engines"].items():
-              print(name, ":", data["status"])
+              print(name, data["status"])
 
           print(
-              "Noyau central :",
+              "CENTRAL:",
               report["central"]["status"]
           )
 
@@ -446,66 +486,64 @@ jobs:
           ):
               print(
                   route,
-                  "DECLAREE" if present else "NON DETECTEE"
+                  "DECLAREE" if present
+                  else "NON DETECTEE"
               )
 
           print(
-              "Integrite protegee :",
-              report["protected"]["integrity_ok"]
+              "INTEGRITE:",
+              protected_ok
+          )
+          print(
+              "DEPOT INCHANGE:",
+              repository_ok
+          )
+          print(
+              "PORT PRODUCTION:",
+              "8765 preserve"
+          )
+          print(
+              "RAPPORT:",
+              output
           )
 
-          print("Rapport :", path)
-
-          if not report["protected"]["integrity_ok"]:
-              print(
-                  "::error::Integrite des fichiers "
-                  "proteges non confirmee"
-              )
+          if report["errors"]:
+              for error in report["errors"]:
+                  print("::error::" + error)
               sys.exit(1)
 
-          if any(
-              value != "OK"
-              for value in report["syntax"].values()
-          ):
-              print(
-                  "::warning::Erreurs de syntaxe "
-                  "detectees"
-              )
-
-          print("Diagnostic statique termine")
+          print("DIAGNOSTIC V63 TERMINE")
           PY
 
-      - name: Publier le rapport de diagnostic
+      - name: Publier les rapports V63
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: x1000-pmu-courses-v59-diagnostic
-          path: ${{ runner.temp }}/x1000-v59/
+          name: x1000-pmu-courses-v63
+          path: ${{ runner.temp }}/x1000-v63/
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Resume operationnel
+      - name: Resume V63
         if: always()
         run: |
           {
-            echo "## X1000 PMU COURSES V59"
-            echo ""
-            echo "Diagnostic statique en lecture seule."
+            echo "## X1000 PMU COURSES V63"
             echo ""
             echo "- Depot : x1000-pmu-courses"
-            echo "- Moteurs : recherche M1 a M5"
-            echo "- Central : detection des candidats"
-            echo "- API : inventaire des routes"
-            echo "- PMU : inventaire des domaines"
-            echo "- Port 8765 : non touche"
-            echo "- Pronostics : non modifies"
-            echo "- FIGEs : non modifies"
-            echo "- Archives : non modifiees"
+            echo "- Python : 3.11"
+            echo "- M1 a M5 : diagnostic statique"
+            echo "- Central : diagnostic statique"
+            echo "- API : inventaire de cinq routes"
+            echo "- HTTP : en attente de contrat sur"
+            echo "- PMU : inventaire des sources"
+            echo "- Port 8765 : preserve"
+            echo "- Pronostics : preserves"
+            echo "- FIGEs : preserves"
+            echo "- Archives : preservees"
+            echo "- Integrite : SHA-256"
+            echo "- Rapport : JSON"
             echo "- Commit automatique : aucun"
             echo "- Push automatique : aucun"
             echo "- Deploiement : aucun"
-            echo ""
-            echo "Les tests d'execution reelle restent"
-            echo "a effectuer apres validation"
-            echo "des contrats et des autorisations."
           } >> "$GITHUB_STEP_SUMMARY"
