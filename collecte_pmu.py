@@ -2,25 +2,32 @@
 # -*- coding: utf-8 -*-
 
 """
-X1000 PMU COURSES V67
-COLLECTE HTTPS CONTROLEE - LECTURE SEULE
+X1000 PMU COURSES V75
+COLLECTE PMU HTTPS SECURISEE
 
-Compatible avec api.py V67.
+Compatible avec api.py V74.
 
-GARANTIES :
-- Aucune source active par defaut.
-- HTTPS obligatoire.
-- Domaines explicitement autorises.
-- IP publiques uniquement.
-- Connexion liee a une IP DNS validee.
-- Verification TLS du domaine original.
-- Redirections interdites.
+OBJECTIFS
+- HTTPS uniquement.
+- Liste blanche stricte des domaines.
+- DNS public verifie.
+- Connexion TCP sur IP validee.
+- Validation TLS du domaine original.
 - Aucun proxy implicite.
-- Taille de reponse limitee.
-- Validation stricte du JSON.
-- Diagnostic HTTP sans exposer les secrets.
-- Aucun pronostic, pari ou FIGE.
-- Aucune ecriture dans les archives.
+- Aucune redirection.
+- Taille JSON limitee.
+- Diagnostic HTTP 400 sans fuite de secrets.
+- Verification structurelle des courses.
+- Aucune confiance dans les declarations client.
+
+GARANTIES
+- Aucune collecte au demarrage.
+- Aucune collecte programmee.
+- Aucune ecriture de fichier.
+- Aucun pronostic invente.
+- Aucun pari automatique.
+- Aucun FIGE.
+- Aucune modification des archives.
 - Aucun commit, push ou deploiement.
 """
 
@@ -36,39 +43,56 @@ from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
 
-VERSION = "V67"
 PROJET = "X1000 PMU COURSES"
+VERSION = "V75"
+
+PORT_LOCAL = 8765
 
 MAX_BYTES = 2_000_000
-TIMEOUT = 10
-
-PORT_PRODUCTION = 8765
-
 MAX_COURSES = 10000
+MAX_PARTANTS = 40
+
+TIMEOUT = 10
 
 HOST_PATTERN = re.compile(
     r"^[a-z0-9-]+(?:\.[a-z0-9-]+)+$"
 )
 
+PARAMETRES_SENSIBLES = {
+    "token",
+    "key",
+    "api_key",
+    "apikey",
+    "secret",
+    "password",
+    "authorization",
+    "access_token",
+}
+
 
 class CollecteErreur(Exception):
-    """Erreur de collecte controlee."""
+    """Erreur controlee de collecte."""
 
     def __init__(
         self,
         message,
         http_status=None,
-        code="COLLECTE_ERREUR"
+        code="COLLECTE_ERREUR",
     ):
         super().__init__(message)
         self.http_status = http_status
         self.code = code
 
 
+def maintenant():
+    return datetime.now(
+        timezone.utc
+    ).isoformat()
+
+
 def configuration():
     """
-    Configuration exclusivement par
-    variables d'environnement.
+    Configuration sans connexion reseau.
     """
 
     url = os.getenv(
@@ -77,17 +101,18 @@ def configuration():
 
     hosts = set()
 
-    for value in os.getenv(
+    valeurs = os.getenv(
         "X1000_ALLOWED_HOSTS", ""
-    ).split(","):
+    )
 
-        host = value.strip().lower()
+    for element in valeurs.split(","):
+        host = element.strip().lower()
 
         if not host:
             continue
 
         if (
-            host.endswith(".")
+            len(host) > 253
             or not HOST_PATTERN.fullmatch(host)
             or any(
                 len(label) > 63
@@ -98,7 +123,7 @@ def configuration():
         ):
             raise CollecteErreur(
                 "Domaine autorise invalide",
-                code="CONFIGURATION_INVALIDE"
+                code="CONFIGURATION_INVALIDE",
             )
 
         hosts.add(host)
@@ -112,26 +137,22 @@ def configuration():
 
 def verifier_url(url, hosts=None):
     """
-    Valider l'URL sans connexion reseau.
-
-    Le DNS est resolu separement et
-    la connexion utilise ensuite une
-    adresse IP explicitement validee.
+    Valider l'URL sans effectuer
+    de connexion reseau.
     """
 
-    if not isinstance(url, str):
-        raise CollecteErreur(
-            "URL invalide",
-            code="URL_INVALIDE"
+    if (
+        not isinstance(url, str)
+        or not url
+        or len(url) > 4096
+        or any(
+            ord(c) < 33 or ord(c) == 127
+            for c in url
         )
-
-    if not url or any(
-        ord(c) < 33 or ord(c) == 127
-        for c in url
     ):
         raise CollecteErreur(
             "URL invalide",
-            code="URL_INVALIDE"
+            code="URL_INVALIDE",
         )
 
     try:
@@ -140,8 +161,8 @@ def verifier_url(url, hosts=None):
         port = parsed.port
     except ValueError as exc:
         raise CollecteErreur(
-            "Adresse URL invalide",
-            code="URL_INVALIDE"
+            "URL invalide",
+            code="URL_INVALIDE",
         ) from exc
 
     if (
@@ -151,22 +172,26 @@ def verifier_url(url, hosts=None):
         or parsed.password is not None
         or port not in (None, 443)
         or parsed.fragment
+        or "\\" in url
     ):
         raise CollecteErreur(
             "Destination HTTPS invalide",
-            code="URL_INVALIDE"
+            code="URL_INVALIDE",
         )
 
-    # Refuser les variantes ambigues
-    # de l'autorite URL.
     if (
-        not HOST_PATTERN.fullmatch(host)
-        or host != host.lower()
-        or host.endswith(".")
+        len(host) > 253
+        or not HOST_PATTERN.fullmatch(host)
+        or any(
+            len(label) > 63
+            or label.startswith("-")
+            or label.endswith("-")
+            for label in host.split(".")
+        )
     ):
         raise CollecteErreur(
-            "Nom de domaine invalide",
-            code="URL_INVALIDE"
+            "Domaine invalide",
+            code="URL_INVALIDE",
         )
 
     if hosts is None:
@@ -175,7 +200,7 @@ def verifier_url(url, hosts=None):
     if host not in hosts:
         raise CollecteErreur(
             "Domaine non autorise",
-            code="DOMAINE_INTERDIT"
+            code="DOMAINE_INTERDIT",
         )
 
     try:
@@ -185,21 +210,26 @@ def verifier_url(url, hosts=None):
     else:
         raise CollecteErreur(
             "Adresse IP directe interdite",
-            code="IP_INTERDITE"
+            code="IP_INTERDITE",
         )
 
-    path = parsed.path or "/"
-
-    if not path.startswith("/"):
-        raise CollecteErreur(
-            "Chemin URL invalide",
-            code="URL_INVALIDE"
-        )
-
-    target = path
+    target = parsed.path or "/"
 
     if parsed.query:
         target += "?" + parsed.query
+
+    if (
+        not target.startswith("/")
+        or target.startswith("//")
+        or any(
+            ord(c) < 32 or ord(c) == 127
+            for c in target
+        )
+    ):
+        raise CollecteErreur(
+            "Chemin URL invalide",
+            code="URL_INVALIDE",
+        )
 
     return {
         "host": host,
@@ -210,8 +240,8 @@ def verifier_url(url, hosts=None):
 
 def resoudre_ips_publiques(host):
     """
-    Resoudre le DNS et refuser toute
-    adresse non globalement routable.
+    Refuser toute resolution DNS
+    contenant une adresse non publique.
     """
 
     try:
@@ -220,18 +250,18 @@ def resoudre_ips_publiques(host):
             443,
             family=socket.AF_UNSPEC,
             type=socket.SOCK_STREAM,
-            proto=socket.IPPROTO_TCP
+            proto=socket.IPPROTO_TCP,
         )
     except socket.gaierror as exc:
         raise CollecteErreur(
             "Resolution DNS impossible",
-            code="DNS_ERREUR"
+            code="DNS_ERREUR",
         ) from exc
 
     if not addresses:
         raise CollecteErreur(
-            "Aucune adresse DNS",
-            code="DNS_VIDE"
+            "Resolution DNS vide",
+            code="DNS_VIDE",
         )
 
     ips = []
@@ -244,13 +274,13 @@ def resoudre_ips_publiques(host):
         except ValueError as exc:
             raise CollecteErreur(
                 "Adresse DNS invalide",
-                code="DNS_INVALIDE"
+                code="DNS_INVALIDE",
             ) from exc
 
         if not ip.is_global:
             raise CollecteErreur(
                 "Adresse DNS non publique",
-                code="DNS_NON_PUBLIC"
+                code="DNS_NON_PUBLIC",
             )
 
         value = str(ip)
@@ -265,19 +295,18 @@ class ConnexionHTTPSControlee(
     http.client.HTTPSConnection
 ):
     """
-    HTTPS avec IP epinglee pour la
-    connexion TCP.
+    Connexion TCP vers une IP
+    prealablement validee.
 
-    Le nom original reste utilise
-    pour SNI et validation du
-    certificat TLS.
+    SNI et verification TLS utilisent
+    toujours le domaine original.
     """
 
     def __init__(
         self,
         host,
         ip,
-        timeout=TIMEOUT
+        timeout=TIMEOUT,
     ):
         context = ssl.create_default_context()
 
@@ -285,85 +314,154 @@ class ConnexionHTTPSControlee(
             host=host,
             port=443,
             timeout=timeout,
-            context=context
+            context=context,
         )
 
         self.ip_validee = ip
 
     def connect(self):
-        """
-        Ne jamais refaire une resolution
-        DNS implicite du domaine original.
-        """
-
         raw_socket = socket.create_connection(
-            (
-                self.ip_validee,
-                443
-            ),
-            timeout=self.timeout
+            (self.ip_validee, 443),
+            timeout=self.timeout,
         )
 
         try:
             self.sock = self._context.wrap_socket(
                 raw_socket,
-                server_hostname=self.host
+                server_hostname=self.host,
             )
         except BaseException:
             raw_socket.close()
             raise
 
 
+def verifier_json(data):
+    """
+    Parser exclusivement un JSON
+    de taille limitee.
+    """
+
+    if not isinstance(
+        data, (bytes, bytearray)
+    ):
+        raise CollecteErreur(
+            "Reponse invalide",
+            code="REPONSE_INVALIDE",
+        )
+
+    if len(data) > MAX_BYTES:
+        raise CollecteErreur(
+            "Reponse trop volumineuse",
+            code="TAILLE_DEPASSEE",
+        )
+
+    try:
+        texte = data.decode("utf-8")
+        payload = json.loads(
+            texte,
+            parse_constant=lambda value: (
+                _refuser_constante(value)
+            ),
+        )
+    except (
+        UnicodeError,
+        ValueError,
+        TypeError,
+    ) as exc:
+        raise CollecteErreur(
+            "JSON invalide",
+            code="JSON_INVALIDE",
+        ) from exc
+
+    return payload
+
+
+def _refuser_constante(value):
+    raise ValueError(
+        "Constante JSON non standard"
+    )
+
+
 def verifier_courses(courses):
     """
-    Verification structurelle seulement.
+    Controle structurel.
 
-    Ne constitue pas une validation
-    officielle des donnees sportives.
+    Ne certifie jamais les
+    informations sportives.
     """
 
     if not isinstance(courses, list):
         raise CollecteErreur(
             "Liste des courses invalide",
-            code="COURSES_INVALIDES"
+            code="COURSES_INVALIDES",
         )
 
     if len(courses) > MAX_COURSES:
         raise CollecteErreur(
-            "Nombre de courses excessif",
-            code="COURSES_TROP_NOMBREUSES"
+            "Trop de courses",
+            code="COURSES_TROP_NOMBREUSES",
         )
 
     for index, course in enumerate(courses):
-
         if not isinstance(course, dict):
             raise CollecteErreur(
-                "Course invalide a l'index "
-                + str(index),
-                code="COURSE_INVALIDE"
+                "Course invalide",
+                code="COURSE_INVALIDE",
             )
+
+        if "partants" in course:
+            partants = course["partants"]
+
+            if not isinstance(partants, list):
+                raise CollecteErreur(
+                    "Partants invalides",
+                    code="PARTANTS_INVALIDES",
+                )
+
+            if len(partants) > MAX_PARTANTS:
+                raise CollecteErreur(
+                    "Trop de partants",
+                    code="PARTANTS_TROP_NOMBREUX",
+                )
+
+            for partant in partants:
+                if not isinstance(
+                    partant, dict
+                ):
+                    raise CollecteErreur(
+                        "Partant invalide",
+                        code="PARTANT_INVALIDE",
+                    )
+
+        # Aucun drapeau de verification
+        # transmis par la source n'est
+        # considere comme une preuve.
+        #
+        # Les champs bruts sont conserves.
+        # L'API indique explicitement
+        # donnees_verifiees=False.
 
     return courses
 
 
 def extraire_courses(payload):
     """
-    Formats acceptes :
-    - liste JSON de courses
-    - objet JSON avec cle 'courses'
+    Formats reconnus :
+    - liste de courses
+    - objet {"courses": [...]}
 
-    Aucun autre format n'est suppose.
+    Aucun format PMU non documente
+    n'est devine.
     """
 
     if isinstance(payload, list):
         return verifier_courses(payload)
 
     if isinstance(payload, dict):
-
         if "courses" not in payload:
             raise CollecteErreur(
                 "Cle courses absente",
-                code="FORMAT_JSON_INCONNU"
+                code="FORMAT_JSON_INCONNU",
             )
 
         return verifier_courses(
@@ -371,40 +469,95 @@ def extraire_courses(payload):
         )
 
     raise CollecteErreur(
-        "Structure JSON non reconnue",
-        code="FORMAT_JSON_INCONNU"
+        "Format JSON inconnu",
+        code="FORMAT_JSON_INCONNU",
     )
+
+
+def diagnostic_http(status):
+    """
+    Diagnostic sans afficher l'URL,
+    les parametres ni les secrets.
+    """
+
+    if status == 400:
+        return {
+            "code": "SOURCE_HTTP_400",
+            "message": (
+                "La source refuse la requete. "
+                "Verifier le chemin, la date, "
+                "les parametres obligatoires "
+                "et le format attendu."
+            ),
+            "correction_automatique": False,
+        }
+
+    if status in (401, 403):
+        return {
+            "code": "SOURCE_ACCES_REFUSE",
+            "message": (
+                "Acces refuse par la source."
+            ),
+            "correction_automatique": False,
+        }
+
+    if status == 404:
+        return {
+            "code": "SOURCE_HTTP_404",
+            "message": (
+                "Ressource introuvable."
+            ),
+            "correction_automatique": False,
+        }
+
+    if status == 429:
+        return {
+            "code": "SOURCE_HTTP_429",
+            "message": (
+                "Limite de requetes atteinte."
+            ),
+            "correction_automatique": False,
+        }
+
+    if 300 <= status < 400:
+        return {
+            "code": "REDIRECTION_INTERDITE",
+            "message": (
+                "Redirection HTTPS refusee."
+            ),
+            "correction_automatique": False,
+        }
+
+    return {
+        "code": "SOURCE_HTTP_ERREUR",
+        "message": (
+            "Erreur HTTP de la source."
+        ),
+        "correction_automatique": False,
+    }
 
 
 def requete_https(url, hosts):
     """
-    Une seule requete GET.
+    Une seule requete GET explicite.
 
-    Pas de redirection.
-    Pas de cookie.
-    Pas de proxy.
-    Pas de reessai automatique.
+    Aucun retry automatique.
+    Aucune redirection.
+    Aucun proxy.
+    Aucun cookie.
     """
 
     destination = verifier_url(
-        url,
-        hosts
+        url, hosts
     )
 
     host = destination["host"]
-
     ips = resoudre_ips_publiques(host)
-
-    # Choisir une IP issue de la
-    # resolution validee.
-    # Aucun nouveau DNS pendant
-    # la connexion TCP.
-    ip = ips[0]
 
     connexion = ConnexionHTTPSControlee(
         host=host,
-        ip=ip,
-        timeout=TIMEOUT
+        ip=ips[0],
+        timeout=TIMEOUT,
     )
 
     try:
@@ -414,28 +567,21 @@ def requete_https(url, hosts):
             headers={
                 "Accept": "application/json",
                 "User-Agent":
-                    "X1000-PMU-COURSES-V67",
+                    "X1000-PMU-COURSES-V75",
                 "Connection": "close",
-            }
+            },
         )
 
         response = connexion.getresponse()
-
         status = response.status
 
         if status != 200:
-
-            if 300 <= status < 400:
-                raise CollecteErreur(
-                    "Redirection HTTP interdite",
-                    http_status=status,
-                    code="REDIRECTION_INTERDITE"
-                )
+            info = diagnostic_http(status)
 
             raise CollecteErreur(
-                "Erreur HTTP de la source",
+                info["message"],
                 http_status=status,
-                code="SOURCE_HTTP_ERREUR"
+                code=info["code"],
             )
 
         content_type = (
@@ -444,35 +590,39 @@ def requete_https(url, hosts):
             ) or ""
         ).lower()
 
-        if (
-            "application/json" not in content_type
-            and "+json" not in content_type
+        media_type = content_type.split(
+            ";", 1
+        )[0].strip()
+
+        if not (
+            media_type == "application/json"
+            or media_type.endswith("+json")
         ):
             raise CollecteErreur(
-                "Reponse non JSON",
-                code="CONTENT_TYPE_INVALIDE"
+                "Content-Type non JSON",
+                code="CONTENT_TYPE_INVALIDE",
             )
 
-        taille = response.getheader(
+        longueur = response.getheader(
             "Content-Length"
         )
 
-        if taille is not None:
+        if longueur is not None:
             try:
-                taille_int = int(taille)
+                taille = int(longueur)
             except ValueError as exc:
                 raise CollecteErreur(
                     "Content-Length invalide",
-                    code="TAILLE_INVALIDE"
+                    code="TAILLE_INVALIDE",
                 ) from exc
 
             if (
-                taille_int < 0
-                or taille_int > MAX_BYTES
+                taille < 0
+                or taille > MAX_BYTES
             ):
                 raise CollecteErreur(
-                    "Reponse trop volumineuse",
-                    code="TAILLE_DEPASSEE"
+                    "Taille interdite",
+                    code="TAILLE_DEPASSEE",
                 )
 
         data = response.read(
@@ -482,7 +632,7 @@ def requete_https(url, hosts):
         if len(data) > MAX_BYTES:
             raise CollecteErreur(
                 "Reponse trop volumineuse",
-                code="TAILLE_DEPASSEE"
+                code="TAILLE_DEPASSEE",
             )
 
         return data
@@ -494,11 +644,11 @@ def requete_https(url, hosts):
         OSError,
         TimeoutError,
         ssl.SSLError,
-        http.client.HTTPException
+        http.client.HTTPException,
     ) as exc:
         raise CollecteErreur(
             "Connexion HTTPS impossible",
-            code="CONNEXION_ERREUR"
+            code="CONNEXION_ERREUR",
         ) from exc
 
     finally:
@@ -507,17 +657,17 @@ def requete_https(url, hosts):
 
 def collecter():
     """
-    Fonction compatible avec
-    api.py V66 et V67.
+    Collecte explicite en lecture seule.
 
-    Retour :
+    Retour compatible avec api.py :
     {
-      "statut": ...,
-      "courses": [...],
-      "source": ...
+        "statut": ...,
+        "courses": [...],
+        "source": ...
     }
 
-    Aucun fichier n'est ecrit.
+    Ne lance aucun moteur.
+    Ne modifie aucun fichier.
     """
 
     config = configuration()
@@ -531,87 +681,179 @@ def collecter():
 
     url = config["url"]
 
-    # Les parametres HTTP 400
-    # ne sont pas inventes.
-    # L'URL doit etre configuree
-    # avec les parametres reels
-    # exiges par la source.
+    destination = verifier_url(
+        url,
+        config["hosts"],
+    )
+
     data = requete_https(
         url,
-        config["hosts"]
+        config["hosts"],
     )
 
-    try:
-        payload = json.loads(
-            data.decode("utf-8")
-        )
-    except (
-        ValueError,
-        UnicodeError
-    ) as exc:
-        raise CollecteErreur(
-            "JSON invalide",
-            code="JSON_INVALIDE"
-        ) from exc
-
-    courses = extraire_courses(
-        payload
-    )
-
-    # Eviter de renvoyer une URL
-    # susceptible de contenir
-    # des parametres sensibles.
-    host = verifier_url(
-        url,
-        config["hosts"]
-    )["host"]
+    payload = verifier_json(data)
+    courses = extraire_courses(payload)
 
     return {
         "statut":
             "DONNEES_RECUES_NON_VERIFIEES",
         "courses": courses,
-        "source": host,
+        "source": destination["host"],
     }
 
 
 def diagnostic():
     """
-    Diagnostic local sans collecte
-    et sans connexion reseau.
+    Aucun appel reseau.
+    Aucun secret affiche.
     """
 
-    config = configuration()
+    try:
+        config = configuration()
+
+        source_configuree = bool(
+            config["url"]
+        )
+
+        active = config["active"]
+
+        domaines = sorted(
+            config["hosts"]
+        )
+
+        configuration_valide = True
+
+    except CollecteErreur:
+        source_configuree = False
+        active = False
+        domaines = []
+        configuration_valide = False
 
     return {
         "projet": PROJET,
         "version": VERSION,
         "mode": "LECTURE_SEULE",
-        "source_configuree": bool(
-            config["url"]
-        ),
-        "configuration_active":
-            config["active"],
-        "domaines_autorises": sorted(
-            config["hosts"]
-        ),
+        "source_configuree":
+            source_configuree,
+        "configuration_active": active,
+        "configuration_valide":
+            configuration_valide,
+        "domaines_autorises":
+            domaines,
         "collecte_automatique": False,
+        "source_authentifiee": False,
+        "donnees_verifiees": False,
         "pronostics_generes": False,
-        "paris_generes": False,
         "figes_modifies": False,
         "archives_modifiees": False,
-        "port_production":
-            PORT_PRODUCTION,
-        "horodatage": datetime.now(
-            timezone.utc
-        ).isoformat(),
+        "port_local_preserve":
+            PORT_LOCAL,
+        "horodatage": maintenant(),
+    }
+
+
+def tests_isoles():
+    """
+    Tests sans reseau ni ecriture.
+    """
+
+    # Source non autorisee.
+    try:
+        verifier_url(
+            "http://example.org/api",
+            {"example.org"},
+        )
+    except CollecteErreur:
+        pass
+    else:
+        raise AssertionError(
+            "HTTP non securise accepte"
+        )
+
+    # Domaine interdit.
+    try:
+        verifier_url(
+            "https://example.org/api",
+            {"autre.example.org"},
+        )
+    except CollecteErreur:
+        pass
+    else:
+        raise AssertionError(
+            "Domaine interdit accepte"
+        )
+
+    # Format valide.
+    resultat = extraire_courses(
+        {
+            "courses": [
+                {
+                    "id": "TEST-V75",
+                    "hippodrome": "TEST",
+                    "partants": [],
+                }
+            ]
+        }
+    )
+
+    assert len(resultat) == 1
+
+    # Format invalide.
+    try:
+        extraire_courses(
+            {"reunions": []}
+        )
+    except CollecteErreur as exc:
+        assert (
+            exc.code
+            == "FORMAT_JSON_INCONNU"
+        )
+    else:
+        raise AssertionError(
+            "Format inconnu accepte"
+        )
+
+    # Diagnostic HTTP 400.
+    info = diagnostic_http(400)
+
+    assert info["code"] == (
+        "SOURCE_HTTP_400"
+    )
+
+    assert (
+        info["correction_automatique"]
+        is False
+    )
+
+    # Aucun NaN JSON accepte.
+    try:
+        verifier_json(
+            b'{"courses":[NaN]}'
+        )
+    except CollecteErreur:
+        pass
+    else:
+        raise AssertionError(
+            "NaN accepte"
+        )
+
+    return {
+        "statut": "TESTS_OK",
+        "reseau": False,
+        "ecriture": False,
+        "pronostic": False,
+        "fige": False,
     }
 
 
 if __name__ == "__main__":
     print(
         json.dumps(
-            diagnostic(),
+            {
+                "diagnostic": diagnostic(),
+                "tests": tests_isoles(),
+            },
             ensure_ascii=False,
-            indent=2
+            indent=2,
         )
     )
