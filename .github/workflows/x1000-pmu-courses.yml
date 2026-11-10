@@ -1,0 +1,511 @@
+name: X1000 PMU COURSES - Preparation V59
+
+run-name: X1000 PMU COURSES V59 - Diagnostic controle
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/x1000-pmu-courses.yml"
+      - "**/*.py"
+      - "requirements*.txt"
+      - "pyproject.toml"
+  pull_request:
+    paths:
+      - ".github/workflows/x1000-pmu-courses.yml"
+      - "**/*.py"
+      - "requirements*.txt"
+      - "pyproject.toml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: x1000-v59-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  diagnostic:
+    name: Diagnostic X1000 PMU COURSES
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+      X1000_PROJECT: x1000-pmu-courses
+      X1000_VERSION: V59
+      X1000_PRODUCTION_PORT: "8765"
+
+    steps:
+      - name: Recuperer le depot en lecture seule
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Installer Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Initialiser le diagnostic
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/x1000-v59"
+          echo "Projet : $X1000_PROJECT"
+          echo "Version : $X1000_VERSION"
+          echo "Depot : $GITHUB_REPOSITORY"
+          echo "Branche : $GITHUB_REF_NAME"
+          python --version
+
+      - name: Verifier identite du depot
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REPOSITORY" in
+            */x1000-pmu-courses)
+              echo "Depot X1000 PMU COURSES confirme"
+              ;;
+            *)
+              echo "::error::Depot incorrect"
+              exit 1
+              ;;
+          esac
+
+      - name: Diagnostic complet V59
+        env:
+          REPORT_DIR: ${{ runner.temp }}/x1000-v59
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+          import ast
+          import datetime
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import re
+          import socket
+          import subprocess
+          import sys
+
+          ROOT = pathlib.Path.cwd().resolve()
+          OUT = pathlib.Path(os.environ["REPORT_DIR"])
+          OUT.mkdir(parents=True, exist_ok=True)
+
+          PROTECTED = (
+              "fige", "figé", "archive",
+              "pronostic", "selection",
+              "audit", "resultat"
+          )
+
+          def digest(path):
+              h = hashlib.sha256()
+              with path.open("rb") as stream:
+                  for chunk in iter(
+                      lambda: stream.read(65536), b""
+                  ):
+                      h.update(chunk)
+              return h.hexdigest()
+
+          def is_protected(path):
+              return any(
+                  word in str(path).lower()
+                  for word in PROTECTED
+              )
+
+          def source_files():
+              excluded = {
+                  ".git", ".venv", "venv",
+                  "node_modules", "__pycache__",
+                  ".tox", ".pytest_cache"
+              }
+              for directory, dirs, files in os.walk(ROOT):
+                  dirs[:] = [
+                      d for d in dirs
+                      if d not in excluded
+                  ]
+                  for filename in files:
+                      p = pathlib.Path(directory) / filename
+                      if p.is_symlink():
+                          continue
+                      yield p
+
+          files = sorted(
+              source_files(),
+              key=lambda p: str(p)
+          )
+
+          pyfiles = [
+              p for p in files
+              if p.suffix == ".py"
+          ]
+
+          protected_before = {
+              str(p.relative_to(ROOT)): digest(p)
+              for p in files
+              if is_protected(p)
+          }
+
+          report = {
+              "project": "X1000 PMU COURSES",
+              "version": "V59",
+              "timestamp_utc":
+                  datetime.datetime.now(
+                      datetime.timezone.utc
+                  ).isoformat(),
+              "repository": os.environ.get(
+                  "GITHUB_REPOSITORY"
+              ),
+              "mode": "diagnostic_read_only",
+              "production_port": 8765,
+              "production_port_tested": False,
+              "python_files": len(pyfiles),
+              "syntax": {},
+              "engines": {},
+              "central": {},
+              "api": {},
+              "pmu_sources": {},
+              "protected": {},
+              "git": {},
+              "limitations": []
+          }
+
+          # 1. Syntaxe Python sans execution.
+          trees = {}
+          for p in pyfiles:
+              rel = str(p.relative_to(ROOT))
+              try:
+                  content = p.read_text(
+                      encoding="utf-8-sig"
+                  )
+                  tree = ast.parse(
+                      content, filename=rel
+                  )
+                  trees[rel] = tree
+                  report["syntax"][rel] = "OK"
+              except Exception as exc:
+                  report["syntax"][rel] = (
+                      f"ERROR: {type(exc).__name__}: {exc}"
+                  )
+
+          # 2. Decouverte non arbitraire M1-M5.
+          for number in range(1, 6):
+              name = f"M{number}"
+              matches = []
+              pattern = re.compile(
+                  rf"(?<![a-z0-9])m{number}"
+                  rf"(?![a-z0-9])",
+                  re.IGNORECASE
+              )
+
+              for p in pyfiles:
+                  rel = str(p.relative_to(ROOT))
+                  if pattern.search(rel):
+                      matches.append(rel)
+
+              status = (
+                  "absent" if not matches
+                  else "candidate_unique"
+                  if len(matches) == 1
+                  else "ambiguous"
+              )
+
+              report["engines"][name] = {
+                  "status": status,
+                  "candidates": matches,
+                  "executed": False,
+                  "note": (
+                      "Identification statique uniquement"
+                  )
+              }
+
+          # 3. Recherche du noyau central.
+          central_names = {
+              "central.py",
+              "coordination_x1000.py",
+              "integration_x1000.py",
+              "coordinateur.py",
+              "orchestrateur.py"
+          }
+
+          candidates = [
+              str(p.relative_to(ROOT))
+              for p in pyfiles
+              if p.name.lower() in central_names
+          ]
+
+          report["central"] = {
+              "candidates": candidates,
+              "status": (
+                  "absent" if not candidates
+                  else "candidate_unique"
+                  if len(candidates) == 1
+                  else "ambiguous"
+              ),
+              "executed": False
+          }
+
+          # 4. Inventaire des routes declarees.
+          routes = set()
+          api_candidates = []
+
+          for rel, tree in trees.items():
+              found_api = False
+
+              for node in ast.walk(tree):
+                  if not isinstance(
+                      node, (ast.FunctionDef,
+                             ast.AsyncFunctionDef)
+                  ):
+                      continue
+
+                  for dec in node.decorator_list:
+                      if not isinstance(
+                          dec, ast.Call
+                      ):
+                          continue
+
+                      func = dec.func
+                      if not isinstance(
+                          func, ast.Attribute
+                      ):
+                          continue
+
+                      if func.attr.lower() not in {
+                          "get", "post", "put",
+                          "delete", "patch",
+                          "route", "api_route"
+                      }:
+                          continue
+
+                      if not dec.args:
+                          continue
+
+                      arg = dec.args[0]
+                      if (
+                          isinstance(arg, ast.Constant)
+                          and isinstance(arg.value, str)
+                      ):
+                          routes.add(arg.value)
+                          found_api = True
+
+              if found_api:
+                  api_candidates.append(rel)
+
+          expected = [
+              "/api/status",
+              "/api/courses",
+              "/api/selections",
+              "/api/figes",
+              "/api/audits"
+          ]
+
+          report["api"] = {
+              "files": api_candidates,
+              "declared_routes": sorted(routes),
+              "expected_routes": expected,
+              "route_presence": {
+                  route: route in routes
+                  for route in expected
+              },
+              "http_tested": False,
+              "asgi_tested": False
+          }
+
+          # 5. Inventaire des domaines hippiques
+          #    declares dans le code source.
+          domains = set()
+          domain_re = re.compile(
+              r"https?://"
+              r"([a-zA-Z0-9.-]+)"
+          )
+
+          for p in pyfiles:
+              try:
+                  content = p.read_text(
+                      encoding="utf-8",
+                      errors="replace"
+                  )
+                  domains.update(
+                      domain_re.findall(content)
+                  )
+              except OSError:
+                  pass
+
+          report["pmu_sources"] = {
+              "declared_domains": sorted(domains),
+              "authorized_domains": [],
+              "http_tested": False,
+              "status": "authorization_not_verified",
+              "note": (
+                  "Aucun appel reseau automatique. "
+                  "Une URL presente dans le code "
+                  "ne prouve pas son autorisation."
+              )
+          }
+
+          # 6. Inventaire des dependances.
+          dependencies = [
+              str(p.relative_to(ROOT))
+              for p in files
+              if (
+                  p.name.startswith("requirements")
+                  and p.suffix == ".txt"
+              )
+              or p.name == "pyproject.toml"
+          ]
+
+          report["dependencies"] = {
+              "manifests": dependencies,
+              "installed": False
+          }
+
+          # 7. Etat Git sans modification.
+          def git(*args):
+              result = subprocess.run(
+                  ["git", *args],
+                  capture_output=True,
+                  text=True,
+                  timeout=15,
+                  check=False
+              )
+              return {
+                  "returncode": result.returncode,
+                  "stdout": result.stdout.strip(),
+                  "stderr": result.stderr.strip()
+              }
+
+          report["git"]["status"] = git(
+              "status", "--porcelain"
+          )
+          report["git"]["branch"] = git(
+              "branch", "--show-current"
+          )
+          report["git"]["head"] = git(
+              "rev-parse", "HEAD"
+          )
+
+          # 8. Controle des donnees protegees.
+          protected_after = {
+              str(p.relative_to(ROOT)): digest(p)
+              for p in source_files()
+              if is_protected(p)
+          }
+
+          report["protected"] = {
+              "files_count": len(protected_before),
+              "before": protected_before,
+              "after": protected_after,
+              "integrity_ok": (
+                  protected_before == protected_after
+              )
+          }
+
+          # 9. Limites explicites.
+          report["limitations"] = [
+              "Moteurs non executes",
+              "Coordination non executee",
+              "Routes API non testees en HTTP",
+              "Sources PMU non interrogees",
+              "Port 8765 non teste",
+              "Aucune simulation de pronostic",
+              "Aucune modification du depot",
+              "Aucun rollback necessaire en lecture seule"
+          ]
+
+          # 10. Rapport JSON hors depot.
+          path = OUT / "rapport-v59.json"
+          path.write_text(
+              json.dumps(
+                  report,
+                  ensure_ascii=False,
+                  indent=2
+              ),
+              encoding="utf-8"
+          )
+
+          print("\n=== X1000 PMU COURSES V59 ===")
+          print("Fichiers Python :", len(pyfiles))
+
+          for name, data in report["engines"].items():
+              print(name, ":", data["status"])
+
+          print(
+              "Noyau central :",
+              report["central"]["status"]
+          )
+
+          for route, present in (
+              report["api"]["route_presence"].items()
+          ):
+              print(
+                  route,
+                  "DECLAREE" if present else "NON DETECTEE"
+              )
+
+          print(
+              "Integrite protegee :",
+              report["protected"]["integrity_ok"]
+          )
+
+          print("Rapport :", path)
+
+          if not report["protected"]["integrity_ok"]:
+              print(
+                  "::error::Integrite des fichiers "
+                  "proteges non confirmee"
+              )
+              sys.exit(1)
+
+          if any(
+              value != "OK"
+              for value in report["syntax"].values()
+          ):
+              print(
+                  "::warning::Erreurs de syntaxe "
+                  "detectees"
+              )
+
+          print("Diagnostic statique termine")
+          PY
+
+      - name: Publier le rapport de diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: x1000-pmu-courses-v59-diagnostic
+          path: ${{ runner.temp }}/x1000-v59/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Resume operationnel
+        if: always()
+        run: |
+          {
+            echo "## X1000 PMU COURSES V59"
+            echo ""
+            echo "Diagnostic statique en lecture seule."
+            echo ""
+            echo "- Depot : x1000-pmu-courses"
+            echo "- Moteurs : recherche M1 a M5"
+            echo "- Central : detection des candidats"
+            echo "- API : inventaire des routes"
+            echo "- PMU : inventaire des domaines"
+            echo "- Port 8765 : non touche"
+            echo "- Pronostics : non modifies"
+            echo "- FIGEs : non modifies"
+            echo "- Archives : non modifiees"
+            echo "- Commit automatique : aucun"
+            echo "- Push automatique : aucun"
+            echo "- Deploiement : aucun"
+            echo ""
+            echo "Les tests d'execution reelle restent"
+            echo "a effectuer apres validation"
+            echo "des contrats et des autorisations."
+          } >> "$GITHUB_STEP_SUMMARY"
