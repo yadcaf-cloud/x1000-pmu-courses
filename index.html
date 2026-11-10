@@ -1,910 +1,623 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="fr">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#080f1b">
-<title>X1000 PMU COURSES V66</title>
-
+<title>X1000 PMU COURSES — V67</title>
 <style>
-:root {
-  color-scheme: dark;
-  --bg:#080f1b;
-  --panel:#111d30;
-  --border:#30435b;
-  --text:#edf3fb;
-  --muted:#9eb2ca;
-  --blue:#53aaff;
-  --green:#54d8a5;
-  --orange:#ffc46b;
-  --red:#ff9696;
+:root{
+ color-scheme:dark;
+ --bg:#080f1b;--panel:#111d30;--line:#30435b;
+ --text:#edf3fb;--muted:#a6b8cf;--blue:#53aaff;
+ --green:#54d8a5;--amber:#ffc46b;--red:#ff9696
 }
-* {box-sizing:border-box}
-body {
-  margin:0;
-  background:var(--bg);
-  color:var(--text);
-  font:15px/1.5 system-ui,Arial,sans-serif;
-}
-header {
-  padding:25px 15px;
-  background:linear-gradient(120deg,#102b49,#101a2c);
-  border-bottom:1px solid var(--border);
-}
-.wrap {max-width:1150px;margin:auto;padding:0 14px}
-main {padding-top:20px;padding-bottom:40px}
-h1 {margin:5px 0;font-size:clamp(24px,5vw,36px)}
-h2 {font-size:19px;margin:0 0 12px}
-h3 {font-size:16px;margin:0 0 8px}
-p {margin:8px 0}
-small,.muted {color:var(--muted)}
-.good {color:var(--green)}
-.warn {color:var(--orange)}
-.error {color:var(--red)}
-.grid {
-  display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));
-  gap:12px;
-}
-.card {
-  background:var(--panel);
-  border:1px solid var(--border);
-  border-radius:14px;
-  padding:16px;
-  margin-bottom:14px;
-  min-width:0;
-}
-.grid .card {margin:0}
-.engine {border-left:3px solid var(--blue)}
-.stat {font-size:26px;font-weight:750}
-.label {font-size:12px;color:var(--muted)}
-.bar,.controls,.row {
-  display:flex;
-  gap:10px;
-  flex-wrap:wrap;
-  align-items:center;
-}
-.row {justify-content:space-between}
-.bar {margin-top:14px}
-.pill {
-  border:1px solid var(--border);
-  border-radius:20px;
-  padding:5px 11px;
-  background:#19283c;
-  font-size:12px;
-}
-input,select,button {
-  font:inherit;
-  border-radius:9px;
-  padding:10px;
-}
-input,select {
-  background:#0b1728;
-  border:1px solid var(--border);
-  color:white;
-  min-width:0;
-}
-.controls {margin:14px 0}
-.controls input {flex:1;min-width:180px}
-button {
-  background:#205080;
-  color:white;
-  border:1px solid #3974a9;
-  cursor:pointer;
-}
-button:hover {background:#296496}
-button:disabled {opacity:.6;cursor:wait}
-button:focus-visible,input:focus-visible,select:focus-visible {
-  outline:2px solid var(--blue);
-  outline-offset:2px;
-}
-.scroll {overflow-x:auto}
-table {
-  width:100%;
-  min-width:550px;
-  border-collapse:collapse;
-}
-th,td {
-  padding:10px;
-  border-bottom:1px solid var(--border);
-  text-align:left;
-  vertical-align:top;
-}
-th {font-size:12px;color:var(--muted)}
-.empty {
-  padding:18px;
-  text-align:center;
-  border:1px dashed var(--border);
-  border-radius:10px;
-  color:var(--muted);
-}
-.tag {
-  display:inline-block;
-  border:1px solid var(--border);
-  border-radius:7px;
-  padding:3px 8px;
-  margin:3px;
-}
-.notice {
-  background:#342a1c;
-  border-left:3px solid var(--orange);
-  padding:12px;
-  border-radius:8px;
-  color:#ffe0aa;
-}
-pre {
-  white-space:pre-wrap;
-  overflow-wrap:anywhere;
-}
-footer {
-  padding:25px 14px;
-  text-align:center;
-  color:var(--muted);
-}
-[hidden] {display:none!important}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+ font:15px/1.55 system-ui,Arial,sans-serif}
+header{padding:24px 16px;background:linear-gradient(120deg,#102b49,#101a2c);
+ border-bottom:1px solid var(--line)}
+.wrap{max-width:1200px;margin:auto;padding:0 14px}
+main{padding-top:20px;padding-bottom:35px}
+h1{font-size:clamp(25px,5vw,37px);margin:4px 0}
+h2{font-size:19px;margin:0 0 12px}
+h3{font-size:16px;margin:0 0 8px}
+p{margin:8px 0}
+small,.muted{color:var(--muted)}
+.good{color:var(--green)}
+.warn{color:var(--amber)}
+.error{color:var(--red)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);
+ border-radius:14px;padding:16px;margin-bottom:14px;min-width:0}
+.grid .card{margin:0}
+.engine{border-left:3px solid var(--blue)}
+.stat{font-size:27px;font-weight:750}
+.label{font-size:12px;color:var(--muted)}
+.row,.controls,.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.row{justify-content:space-between}
+.bar{margin-top:15px}
+.pill{border:1px solid var(--line);border-radius:20px;
+ padding:5px 11px;background:#19283c;font-size:12px}
+input,button,select{font:inherit;border-radius:9px;padding:10px}
+input,select{background:#0b1728;color:white;border:1px solid var(--line)}
+input{flex:1;min-width:180px}
+button{background:#205080;color:white;border:1px solid #3974a9;cursor:pointer}
+button:hover{background:#296496}
+button:disabled{opacity:.55;cursor:wait}
+button:focus-visible,input:focus-visible,select:focus-visible{
+ outline:2px solid var(--blue);outline-offset:2px}
+.controls{margin:14px 0}
+.scroll{overflow-x:auto}
+table{width:100%;min-width:560px;border-collapse:collapse}
+th,td{padding:10px;border-bottom:1px solid var(--line);
+ text-align:left;vertical-align:top}
+th{font-size:12px;color:var(--muted)}
+.empty{padding:16px;text-align:center;color:var(--muted);
+ border:1px dashed var(--line);border-radius:10px}
+.tag{display:inline-block;border:1px solid var(--line);
+ padding:3px 8px;margin:3px;border-radius:7px}
+.notice{border-left:3px solid var(--amber);background:#342a1c;
+ padding:12px;border-radius:8px}
+pre{white-space:pre-wrap;overflow-wrap:anywhere}
+footer{text-align:center;color:var(--muted);padding:24px}
+[hidden]{display:none!important}
 </style>
 </head>
-
 <body>
-
 <header>
-  <div class="wrap">
-    <div class="good">LECTURE SEULE · V66</div>
-    <h1>🏇 X1000 PMU COURSES</h1>
-    <p>
-      Intelligence hippique · M1 à M5 ·
-      Coordination centrale X1000
-    </p>
-    <div class="bar">
-      <span class="pill" id="connection">
-        Source non connectée
-      </span>
-      <span class="pill" id="updated">
-        Actualisation : —
-      </span>
-      <span class="pill">
-        FIGÉs et archives protégés
-      </span>
-    </div>
-  </div>
+<div class="wrap">
+ <div class="good">V67 · SUPERVISION EN LECTURE SEULE</div>
+ <h1>🏇 X1000 PMU COURSES</h1>
+ <p>Intelligence hippique · M1 à M5 · Coordination centrale</p>
+ <div class="bar">
+  <span class="pill" id="connection">API non vérifiée</span>
+  <span class="pill" id="updated">Actualisation : —</span>
+  <span class="pill">FIGÉs et archives protégés</span>
+ </div>
+</div>
 </header>
 
 <main class="wrap">
-
 <section class="grid">
-  <article class="card">
-    <div class="label">Courses reçues</div>
-    <div class="stat" id="nCourses">0</div>
-  </article>
-  <article class="card">
-    <div class="label">Courses à venir</div>
-    <div class="stat" id="nUpcoming">0</div>
-  </article>
-  <article class="card">
-    <div class="label">Sélections publiées</div>
-    <div class="stat" id="nSelections">0</div>
-  </article>
-  <article class="card">
-    <div class="label">Résultats déclarés vérifiés</div>
-    <div class="stat" id="nResults">0</div>
-  </article>
+ <article class="card"><div class="label">Courses reçues</div><div class="stat" id="nCourses">—</div></article>
+ <article class="card"><div class="label">Courses à venir</div><div class="stat" id="nUpcoming">—</div></article>
+ <article class="card"><div class="label">Sélections publiées</div><div class="stat" id="nSelections">—</div></article>
+ <article class="card"><div class="label">Audits vérifiés</div><div class="stat" id="nAudits">—</div></article>
 </section>
 
 <section class="card">
-  <h2>Connexion aux données PMU</h2>
-  <p class="muted">
-    API HTTPS X1000 ou fichiers JSON du dépôt.
-    Aucune donnée fictive ne sera générée.
-  </p>
-  <div class="controls">
-    <input
-      id="apiBase"
-      type="url"
-      placeholder="https://votre-api.example"
-      aria-label="Adresse HTTPS de l'API">
-    <button id="load" type="button">
-      Actualiser
-    </button>
-  </div>
-  <p id="status" role="status" aria-live="polite">
-    En attente de connexion.
-  </p>
-  <p class="muted" id="collection">
-    Collecte non vérifiée.
-  </p>
-  <details id="diagnosticBox" hidden>
-    <summary>Diagnostics techniques</summary>
-    <pre class="error" id="diagnostics"></pre>
-  </details>
+ <h2>Connexion API X1000</h2>
+ <p class="muted">Adresse HTTPS de l'API de production. Aucun appel d'écriture.</p>
+ <div class="controls">
+  <input id="apiBase" type="url" aria-label="URL API"
+   placeholder="https://votre-api.example">
+  <button id="load" type="button">Actualiser</button>
+ </div>
+ <div class="controls">
+  <label for="refresh">Rafraîchissement</label>
+  <select id="refresh">
+   <option value="0">Manuel</option>
+   <option value="60000">1 minute</option>
+   <option value="300000" selected>5 minutes</option>
+   <option value="600000">10 minutes</option>
+  </select>
+ </div>
+ <p id="status" role="status" aria-live="polite">En attente.</p>
+ <p class="muted" id="collection">Collecte non vérifiée.</p>
+ <details>
+  <summary>Diagnostic des cinq routes API</summary>
+  <div id="routes"></div>
+  <pre id="diagnostics"></pre>
+ </details>
 </section>
 
 <section class="card">
-  <h2>Supervision X1000 V66</h2>
-  <p id="supervision" class="muted">
-    API non vérifiée
-  </p>
-  <div class="grid" id="supervisionEngines"></div>
-  <p id="centralStatus" class="muted">
-    Coordination centrale en attente
-  </p>
+ <h2>Supervision des moteurs M1 à M5</h2>
+ <p id="apiInfo" class="muted">Statut indisponible.</p>
+ <div class="grid" id="supervision"></div>
 </section>
 
 <section class="card">
-  <div class="row">
-    <h2>Programme des courses PMU</h2>
-    <span id="courseCount" class="muted">0 course</span>
-  </div>
-
-  <div class="controls">
-    <input
-      id="search"
-      placeholder="Rechercher une course ou un hippodrome"
-      aria-label="Rechercher une course">
-    <select id="discipline" aria-label="Discipline">
-      <option value="">Toutes disciplines</option>
-      <option>Attelé</option>
-      <option>Monté</option>
-      <option>Plat</option>
-      <option>Haies</option>
-      <option>Steeple</option>
-      <option>Cross</option>
-    </select>
-  </div>
-
-  <div class="scroll">
-    <table>
-      <thead>
-        <tr>
-          <th>Départ</th>
-          <th>Réunion / Course</th>
-          <th>Hippodrome</th>
-          <th>Discipline</th>
-          <th>Partants</th>
-          <th>Fiche</th>
-        </tr>
-      </thead>
-      <tbody id="courseRows"></tbody>
-    </table>
-  </div>
-
-  <div class="empty" id="courseEmpty">
-    Aucune course disponible.
-  </div>
+ <div class="row">
+  <h2>Programme des courses</h2>
+  <span id="courseCount" class="muted">—</span>
+ </div>
+ <div class="controls">
+  <input id="search" placeholder="Rechercher course ou hippodrome">
+  <select id="discipline">
+   <option value="">Toutes disciplines</option>
+   <option>Attelé</option><option>Monté</option>
+   <option>Plat</option><option>Haies</option>
+   <option>Steeple</option><option>Cross</option>
+  </select>
+ </div>
+ <div class="scroll">
+  <table>
+   <thead><tr>
+    <th>Départ</th><th>Course</th><th>Hippodrome</th>
+    <th>Discipline</th><th>Partants</th><th>Fiche</th>
+   </tr></thead>
+   <tbody id="courseRows"></tbody>
+  </table>
+ </div>
+ <div class="empty" id="courseEmpty">Aucune donnée reçue.</div>
 </section>
 
 <section class="card">
-  <h2>Course sélectionnée</h2>
-  <div id="selectedCourse" class="empty">
-    Sélectionnez une course.
-  </div>
+ <h2>Fiche de course et partants</h2>
+ <div id="detail" class="empty">Sélectionnez une course.</div>
 </section>
 
 <section>
-  <h2>Moteurs indépendants M1 à M5</h2>
-  <div class="grid" id="engines"></div>
+ <h2>Analyses indépendantes M1 à M5</h2>
+ <div class="grid" id="engines"></div>
 </section>
 
 <section class="card">
-  <h2>Coordination centrale X1000</h2>
-  <div id="central" class="empty">
-    Aucune synthèse publiée.
-  </div>
+ <h2>Coordination centrale X1000</h2>
+ <div id="central" class="empty">Aucune synthèse publiée.</div>
 </section>
 
 <section class="card">
-  <h2>FIGÉs historiques — lecture seule</h2>
-  <div id="locks" class="empty">
-    Aucun FIGÉ disponible.
-  </div>
+ <h2>FIGÉs — archives en lecture seule</h2>
+ <div id="locks" class="empty">Données indisponibles.</div>
 </section>
 
 <section class="card">
-  <h2>Arrivées officielles et audits</h2>
-  <div id="results" class="empty">
-    Aucun résultat vérifié disponible.
-  </div>
+ <h2>Audits et résultats officiels</h2>
+ <div id="audits" class="empty">Données indisponibles.</div>
 </section>
 
 <div class="notice">
-  Les pronostics ne garantissent aucun gain.
-  Aucune sélection, aucun FIGÉ et aucune archive
-  ne sont modifiés par cette interface.
+ Les pronostics ne garantissent aucun gain.
+ Cette interface ne crée ni ne modifie les sélections,
+ FIGÉs, résultats ou archives. Les données non vérifiées
+ ne sont jamais présentées comme officielles.
 </div>
-
 </main>
-
-<footer>
-  X1000 PMU COURSES V66 · Consultation uniquement
-</footer>
+<footer>X1000 PMU COURSES V67 · Consultation uniquement</footer>
 
 <script>
 "use strict";
 
-const $ = id => document.getElementById(id);
-
-const ROLES = {
-  M1:"Statistiques et performances",
-  M2:"Rythme et stratégie",
-  M3:"Cheval, jockey et parcours",
-  M4:"Forme et informations récentes",
-  M5:"Analyse critique et valeurs cachées"
+const $=id=>document.getElementById(id);
+const ROLES={
+ M1:"Statistiques et performances",
+ M2:"Rythme et stratégie",
+ M3:"Cheval, jockey et parcours",
+ M4:"Forme et informations récentes",
+ M5:"Analyse critique et valeurs cachées"
 };
-
-const state = {
-  courses:[],
-  selections:[],
-  figes:[],
-  audits:[],
-  arrivees:[],
-  status:null,
-  collection:null,
-  selected:null,
-  errors:[],
-  sources:[]
+const PATHS={
+ status:"/api/status",
+ courses:"/api/courses",
+ selections:"/api/selections",
+ figes:"/api/figes",
+ audits:"/api/audits"
 };
+const state={
+ status:null,courses:[],selections:[],figes:[],audits:[],
+ availability:{},selected:null,errors:[],loading:false,
+ generation:0
+};
+let timer=null;
 
-function get(obj,...keys) {
-  if (!obj || typeof obj !== "object") return null;
-  for (const key of keys) {
-    if (obj[key] !== undefined &&
-        obj[key] !== null &&
-        obj[key] !== "") {
-      return obj[key];
-    }
-  }
-  return null;
+function esc(v){
+ return String(v??"—").replace(/[&<>"']/g,c=>({
+  "&":"&amp;","<":"&lt;",">":"&gt;",
+  '"':"&quot;","'":"&#39;"
+ })[c]);
 }
-
-function safe(value) {
-  return String(value ?? "—").replace(
-    /[&<>"']/g,
-    char => ({
-      "&":"&amp;",
-      "<":"&lt;",
-      ">":"&gt;",
-      '"':"&quot;",
-      "'":"&#39;"
-    })[char]
-  );
+function get(o,...keys){
+ if(!o||typeof o!=="object")return null;
+ for(const k of keys)
+  if(o[k]!==undefined&&o[k]!==null&&o[k]!=="")
+   return o[k];
+ return null;
 }
-
-function asList(data,keys=[]) {
-  if (Array.isArray(data)) return data;
-  if (!data || typeof data !== "object") return [];
-  for (const key of [...keys,"data","items"]) {
-    if (Array.isArray(data[key])) return data[key];
-  }
-  return [];
+function list(data,keys=[]){
+ if(Array.isArray(data))return data;
+ if(!data||typeof data!=="object")return null;
+ for(const k of [...keys,"data","items"]){
+  if(Array.isArray(data[k]))return data[k];
+ }
+ return null;
 }
-
-function idOf(course) {
-  return String(get(
-    course,"course_id","id","identifiant","race_id"
-  ) ?? "");
+function idOf(x){
+ return String(get(x,"course_id","id","identifiant","race_id")??"");
 }
-
-function runnersOf(course) {
-  return asList(
-    get(course,"partants","runners","chevaux"),
-    ["partants","runners"]
-  );
+function runners(x){
+ return list(get(x,"partants","runners","chevaux"))||[];
 }
-
-function timeOf(course) {
-  return get(
-    course,"heure_depart","depart","start_time",
-    "date_heure_depart","horaire","heure"
-  );
+function timeOf(x){
+ return get(x,"date_heure_depart","heure_depart",
+  "start_time","depart","horaire","heure");
 }
-
-function formatTime(value) {
-  if (!value) return "—";
-  const s = String(value);
-  if (/^\d{1,2}:\d{2}/.test(s)) return s.slice(0,5);
-  const date = new Date(s);
-  if (Number.isNaN(date.getTime())) return s;
-  return date.toLocaleString("fr-FR",{
-    timeZone:"Europe/Paris",
-    day:"2-digit",
-    month:"2-digit",
-    hour:"2-digit",
-    minute:"2-digit"
+function formatTime(value){
+ if(!value)return "—";
+ const s=String(value);
+ if(/^\d{1,2}:\d{2}$/.test(s))return s;
+ const d=new Date(s);
+ if(!Number.isFinite(d.getTime()))return s;
+ return d.toLocaleString("fr-FR",{
+  timeZone:"Europe/Paris",day:"2-digit",month:"2-digit",
+  hour:"2-digit",minute:"2-digit"
+ });
+}
+function raceLabel(x){
+ const r=get(x,"reunion","numero_reunion","r");
+ const c=get(x,"course","numero_course","c");
+ return r!=null&&c!=null?"R"+r+" C"+c:idOf(x)||"—";
+}
+function disciplineOf(x){
+ return String(get(x,"discipline","specialite","type_course")??"—");
+}
+function sameRace(a,b){
+ const x=idOf(a),y=idOf(b);
+ if(x&&y)return x===y;
+ const ar=get(a,"reunion","numero_reunion");
+ const br=get(b,"reunion","numero_reunion");
+ const ac=get(a,"course","numero_course");
+ const bc=get(b,"course","numero_course");
+ const ad=get(a,"date","date_course");
+ const bd=get(b,"date","date_course");
+ return ar!=null&&br!=null&&ac!=null&&bc!=null&&
+  ad!=null&&bd!=null&&
+  String(ar)===String(br)&&String(ac)===String(bc)&&
+  String(ad)===String(bd);
+}
+function linked(items,course){
+ return items.filter(x=>sameRace(x,course));
+}
+function engineName(x){
+ return String(get(x,"moteur","engine")??"").toUpperCase();
+}
+function rankOf(x){
+ return get(x,"classement","ranking","pronostic","top5");
+}
+function renderRank(value){
+ if(!Array.isArray(value)||!value.length)return "Non publié";
+ return value.map(v=>{
+  const n=typeof v==="object"
+   ?get(v,"numero","num","nom"):v;
+  return '<span class="tag">'+esc(n)+'</span>';
+ }).join("");
+}
+function verified(x){
+ return get(x,"resultat_verifie","verifie","verified")===true &&
+  Boolean(get(x,"source_officielle","source_url","url_source"));
+}
+function baseURL(){
+ const raw=$("apiBase").value.trim();
+ if(!raw)return "";
+ try{
+  const u=new URL(raw);
+  const local=["localhost","127.0.0.1","[::1]"];
+  if(u.protocol!=="https:"&&
+    !(u.protocol==="http:"&&local.includes(u.hostname)))
+   throw Error("HTTPS obligatoire");
+  if(u.username||u.password||u.search||u.hash)
+   throw Error("URL sans identifiants ni paramètres requise");
+  const path=u.pathname.replace(/\/+$/,"");
+  if(path&&path!=="/api")
+   throw Error("Indiquez la racine de l'API");
+  return u.origin;
+ }catch(e){
+  throw Error("Adresse API invalide : "+e.message);
+ }
+}
+async function fetchJSON(url){
+ const controller=new AbortController();
+ const timeout=setTimeout(()=>controller.abort(),10000);
+ try{
+  const response=await fetch(url,{
+   method:"GET",signal:controller.signal,
+   cache:"no-store",mode:"cors",
+   credentials:"omit",redirect:"error",
+   headers:{"Accept":"application/json"}
   });
+  if(!response.ok)throw Error("HTTP "+response.status);
+  const type=response.headers.get("content-type")||"";
+  if(!type.includes("json"))
+   throw Error("Réponse non JSON");
+  return await response.json();
+ }finally{clearTimeout(timeout)}
 }
-
-function disciplineOf(course) {
-  return String(get(
-    course,"discipline","specialite","type_course"
-  ) ?? "—");
+async function readRoute(base,key){
+ try{
+  const data=await fetchJSON(base+PATHS[key]);
+  return {key,ok:true,data};
+ }catch(e){
+  return {key,ok:false,error:String(e.message)};
+ }
 }
-
-function raceLabel(course) {
-  const reunion = get(
-    course,"reunion","numero_reunion","r"
-  );
-  const numero = get(
-    course,"course","numero_course","c"
-  );
-  if (reunion != null && numero != null) {
-    return "R" + reunion + " C" + numero;
-  }
-  return idOf(course) || "—";
+function reset(){
+ state.status=null;
+ state.courses=[];
+ state.selections=[];
+ state.figes=[];
+ state.audits=[];
+ state.availability={};
+ state.errors=[];
 }
-
-function sameRace(item,course) {
-  const a = idOf(item);
-  const b = idOf(course);
-  if (a && b) return a === b;
-
-  const r1 = get(item,"reunion","numero_reunion");
-  const r2 = get(course,"reunion","numero_reunion");
-  const c1 = get(item,"course","numero_course");
-  const c2 = get(course,"course","numero_course");
-  const d1 = get(item,"date","date_course");
-  const d2 = get(course,"date","date_course");
-
-  return r1 != null && c1 != null &&
-    d1 != null && d2 != null &&
-    String(r1) === String(r2) &&
-    String(c1) === String(c2) &&
-    String(d1) === String(d2);
+function displayNumber(id,value){
+ $(id).textContent=value==null?"—":String(value);
 }
-
-function linked(items,course) {
-  return items.filter(x => sameRace(x,course));
+function renderStatus(){
+ const s=state.status;
+ $("apiInfo").textContent=s
+  ?[get(s,"projet")||"API",
+    get(s,"version")||"Version inconnue",
+    get(s,"mode")||"Mode non déclaré"].join(" · ")
+  :"Statut API indisponible";
+ $("supervision").innerHTML=Object.entries(ROLES).map(([name,role])=>{
+  const raw=s?.moteurs?.[name];
+  const status=typeof raw==="string"?raw:
+   get(raw,"statut","status")||"NON DISPONIBLE";
+  return `<article class="card engine">
+   <h3>${name} — ${esc(role)}</h3>
+   <p>État déclaré : <strong>${esc(status)}</strong></p>
+   <small>Une réponse de statut ne prouve pas
+   une analyse en cours.</small>
+  </article>`;
+ }).join("");
+ const configured=s?.source_configuree===true;
+ const automatic=s?.collecte_automatique===true;
+ $("collection").textContent=s
+  ?"Source configurée : "+(configured?"oui":"non")+
+   " · Collecte automatique déclarée : "+(automatic?"oui":"non")
+  :"Collecte non vérifiée.";
 }
-
-function rankOf(item) {
-  return get(
-    item,"classement","ranking","pronostic",
-    "selection","top5"
-  );
-}
-
-function renderRank(value) {
-  if (!Array.isArray(value) || !value.length) {
-    return "Non disponible";
-  }
-  return value.map(item => {
-    const n = typeof item === "object"
-      ? get(item,"numero","num","nom")
-      : item;
-    return '<span class="tag">' +
-      safe(n) + '</span>';
-  }).join("");
-}
-
-function verified(item) {
-  return get(
-    item,"resultat_verifie","verifie",
-    "verified","officiel","official"
-  ) === true && Boolean(get(
-    item,"source_officielle","source",
-    "source_url","url_source"
-  ));
-}
-
-async function readJSON(url) {
-  const controller = new AbortController();
-  const timer = setTimeout(
-    () => controller.abort(),8500
-  );
-  try {
-    const response = await fetch(url,{
-      signal:controller.signal,
-      cache:"no-store",
-      headers:{Accept:"application/json"}
-    });
-    if (!response.ok) {
-      throw Error("HTTP " + response.status);
-    }
-    return await response.json();
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function readSource(url,key) {
-  try {
-    const data = await readJSON(url);
-    state.sources.push(key + " : " + url);
-    return data;
-  } catch (error) {
-    state.errors.push(
-      key + " : " + String(error.message)
-    );
-    return null;
-  }
-}
-
-function renderSupervision() {
-  const status = state.status;
-
-  $("supervision").textContent = status
-    ? "API : " + (status.projet || "—") +
-      " · " + (status.version || "—") +
-      " · " + (status.mode || "—")
-    : "API de statut non connectée";
-
-  $("supervisionEngines").innerHTML =
-    Object.entries(ROLES).map(([name,role]) => `
-      <article class="card engine">
-        <h3>${safe(name)} — ${safe(role)}</h3>
-        <p class="muted">
-          ${safe(status?.moteurs?.[name] ??
-            "ÉTAT_NON_DISPONIBLE")}
-        </p>
-      </article>
-    `).join("");
-
-  const central = state.selections.some(item =>
-    ["X1000","CENTRAL","COORDINATION"].includes(
-      String(get(item,"moteur","engine") || "")
-        .toUpperCase()
-    )
-  );
-
-  $("centralStatus").textContent = central
-    ? "Coordination X1000 : synthèse publiée disponible"
-    : "Coordination X1000 : aucune synthèse publiée";
-
-  $("diagnosticBox").hidden =
-    state.errors.length === 0;
-
-  $("diagnostics").textContent =
-    state.errors.join("\n");
-}
-
-function renderCourses() {
-  const query = $("search").value.trim().toLowerCase();
-  const discipline = $("discipline").value.toLowerCase();
-
-  const filtered = state.courses.filter(course => {
-    const d = disciplineOf(course).toLowerCase();
-    const search = [
-      idOf(course),
-      raceLabel(course),
-      get(course,"hippodrome","lieu","venue"),
-      disciplineOf(course)
-    ].join(" ").toLowerCase();
-
-    return (!discipline || d.includes(discipline)) &&
-      (!query || search.includes(query));
+function renderCourses(){
+ const query=$("search").value.trim().toLowerCase();
+ const filter=$("discipline").value.toLowerCase();
+ const filtered=state.courses.filter(c=>{
+  const text=[
+   idOf(c),raceLabel(c),
+   get(c,"hippodrome","lieu","venue"),
+   disciplineOf(c)
+  ].join(" ").toLowerCase();
+  return (!query||text.includes(query))&&
+   (!filter||disciplineOf(c).toLowerCase().includes(filter));
+ });
+ $("courseCount").textContent=filtered.length+" course(s)";
+ $("courseEmpty").hidden=filtered.length>0;
+ $("courseEmpty").textContent=state.availability.courses===false
+  ?"Route courses indisponible."
+  :"Aucune course reçue pour ce filtre.";
+ $("courseRows").innerHTML=filtered.map(c=>{
+  const index=state.courses.indexOf(c);
+  const count=get(c,"nombre_partants","nb_partants")??
+   (runners(c).length||"—");
+  return `<tr>
+   <td>${esc(formatTime(timeOf(c)))}</td>
+   <td>${esc(raceLabel(c))}</td>
+   <td>${esc(get(c,"hippodrome","lieu","venue"))}</td>
+   <td>${esc(disciplineOf(c))}</td>
+   <td>${esc(count)}</td>
+   <td><button type="button" data-index="${index}"
+    class="choose">Voir</button></td>
+  </tr>`;
+ }).join("");
+ document.querySelectorAll(".choose").forEach(b=>{
+  b.addEventListener("click",()=>{
+   state.selected=idOf(state.courses[Number(b.dataset.index)]);
+   renderDetail();
+   $("detail").scrollIntoView({behavior:"smooth",block:"start"});
   });
-
-  $("courseCount").textContent =
-    filtered.length + " course(s)";
-
-  $("courseEmpty").hidden = filtered.length > 0;
-
-  $("courseRows").innerHTML = filtered.map(course => {
-    const index = state.courses.indexOf(course);
-    const count = get(
-      course,"nombre_partants","nb_partants"
-    ) ?? runnersOf(course).length;
-
-    return `
-      <tr>
-        <td>${safe(formatTime(timeOf(course)))}</td>
-        <td>${safe(raceLabel(course))}</td>
-        <td>${safe(get(
-          course,"hippodrome","lieu","venue"
-        ))}</td>
-        <td>${safe(disciplineOf(course))}</td>
-        <td>${safe(count)}</td>
-        <td>
-          <button type="button"
-            data-index="${index}" class="choose">
-            Voir
-          </button>
-        </td>
-      </tr>
-    `;
-  }).join("");
-
-  document.querySelectorAll(".choose").forEach(button => {
-    button.addEventListener("click",() => {
-      state.selected = Number(button.dataset.index);
-      renderDetail();
-      $("selectedCourse").scrollIntoView({
-        behavior:"smooth",
-        block:"start"
-      });
-    });
-  });
+ });
 }
-
-function renderDetail() {
-  const course = state.courses[state.selected];
-
-  if (!course) {
-    $("selectedCourse").innerHTML =
-      '<div class="empty">Aucune course sélectionnée.</div>';
-    renderEngines(null);
-    return;
-  }
-
-  const runners = runnersOf(course);
-
-  let html = `
-    <h3>${safe(raceLabel(course))} —
-      ${safe(get(course,"hippodrome","lieu","venue"))}
-    </h3>
-    <p>Départ : ${safe(formatTime(timeOf(course)))}</p>
-    <p>Discipline : ${safe(disciplineOf(course))}</p>
-    <p>Identifiant : ${safe(idOf(course))}</p>
-    <h3>Partants</h3>
-  `;
-
-  if (runners.length) {
-    html += `
-      <div class="scroll"><table>
-      <thead><tr>
-        <th>N°</th>
-        <th>Cheval</th>
-        <th>Jockey / driver</th>
-        <th>Entraîneur</th>
-      </tr></thead><tbody>
-    `;
-
-    html += runners.map(p => `
-      <tr>
-        <td>${safe(get(p,"numero","num"))}</td>
-        <td>${safe(get(p,"nom","nom_cheval","name"))}</td>
-        <td>${safe(get(
-          p,"jockey","driver","jockey_driver"
-        ))}</td>
-        <td>${safe(get(p,"entraineur","trainer"))}</td>
-      </tr>
-    `).join("");
-
-    html += "</tbody></table></div>";
-  } else {
-    html += '<div class="empty">Partants indisponibles.</div>';
-  }
-
-  $("selectedCourse").innerHTML = html;
-  renderEngines(course);
+function selectedCourse(){
+ return state.courses.find(c=>idOf(c)===state.selected)||null;
 }
-
-function renderEngines(course) {
-  const selections = course
-    ? linked(state.selections,course)
-    : [];
-
-  $("engines").innerHTML =
-    Object.entries(ROLES).map(([name,role]) => {
-      const result = selections.find(item =>
-        String(get(item,"moteur","engine") || "")
-          .toUpperCase() === name
-      );
-
-      return `
-        <article class="card engine">
-          <h3>${name} — ${safe(role)}</h3>
-          ${result ? `
-            <p>État : ${safe(get(
-              result,"statut","status"
-            ))}</p>
-            <p>Classement :
-              ${renderRank(rankOf(result))}
-            </p>
-            <p>Analyse :
-              ${safe(get(
-                result,"analyse","analysis","commentaire"
-              ) ?? "Non disponible")}
-            </p>
-            <p>Pari :
-              ${safe(get(result,"pari","bet") ??
-                "Non disponible")}
-            </p>
-          ` : `
-            <p class="muted">
-              Aucune sélection publiée pour cette course.
-            </p>
-          `}
-        </article>
-      `;
-    }).join("");
-
-  const central = selections.find(item =>
-    ["X1000","CENTRAL","COORDINATION"].includes(
-      String(get(item,"moteur","engine") || "")
-        .toUpperCase()
-    )
+function renderDetail(){
+ const c=selectedCourse();
+ if(!c){
+  $("detail").innerHTML='<div class="empty">Sélectionnez une course.</div>';
+  renderEngines(null);
+  renderCentral(null);
+  return;
+ }
+ const partants=runners(c);
+ let html=`<h3>${esc(raceLabel(c))} —
+  ${esc(get(c,"hippodrome","lieu","venue"))}</h3>
+  <p>Départ : ${esc(formatTime(timeOf(c)))}</p>
+  <p>Discipline : ${esc(disciplineOf(c))}</p>
+  <p>Identifiant : ${esc(idOf(c))}</p><h3>Partants</h3>`;
+ if(partants.length){
+  html+='<div class="scroll"><table><thead><tr>'+
+   '<th>N°</th><th>Cheval</th><th>Jockey / driver</th>'+
+   '<th>Entraîneur</th></tr></thead><tbody>';
+  html+=partants.map(p=>`<tr>
+   <td>${esc(get(p,"numero","num"))}</td>
+   <td>${esc(get(p,"nom","nom_cheval","name"))}</td>
+   <td>${esc(get(p,"jockey","driver","jockey_driver"))}</td>
+   <td>${esc(get(p,"entraineur","trainer"))}</td>
+  </tr>`).join("");
+  html+="</tbody></table></div>";
+ }else{
+  html+='<p class="muted">Partants non disponibles.</p>';
+ }
+ $("detail").innerHTML=html;
+ renderEngines(c);
+ renderCentral(c);
+}
+function renderEngines(course){
+ const selections=course?linked(state.selections,course):[];
+ $("engines").innerHTML=Object.entries(ROLES).map(([name,role])=>{
+  const result=selections.find(x=>engineName(x)===name);
+  return `<article class="card engine">
+   <h3>${name} — ${esc(role)}</h3>
+   ${result?`
+    <p>État : ${esc(get(result,"statut","status")||"Publié")}</p>
+    <p>Classement : ${renderRank(rankOf(result))}</p>
+    <p>Analyse : ${esc(get(result,"analyse","analysis"))}</p>
+    <p>Pari : ${esc(get(result,"pari","bet"))}</p>
+   `:'<p class="muted">Aucune analyse publiée pour cette course.</p>'}
+  </article>`;
+ }).join("");
+}
+function renderCentral(course){
+ const selections=course?linked(state.selections,course):[];
+ const result=selections.find(x=>
+  ["X1000","CENTRAL","COORDINATION"].includes(engineName(x))
+ );
+ $("central").innerHTML=result?`
+  <p>Classement : ${renderRank(rankOf(result))}</p>
+  <p>Analyse : ${esc(get(result,"analyse","analysis"))}</p>
+  <p>Pari : ${esc(get(result,"pari","bet"))}</p>
+ `:'<div class="empty">Aucune synthèse centrale publiée pour cette course.</div>';
+}
+function renderRecords(id,items,type){
+ if(state.availability[type]===false){
+  $(id).innerHTML='<div class="empty">Route indisponible.</div>';
+  return;
+ }
+ if(!items.length){
+  $(id).innerHTML='<div class="empty">Aucun enregistrement disponible.</div>';
+  return;
+ }
+ $(id).innerHTML=items.slice(0,100).map(x=>{
+  const name=get(x,"course_id","id","identifiant")||"Course non identifiée";
+  const status=get(x,"statut","status")||"Statut non déclaré";
+  const source=get(x,"source_officielle","source_verification",
+   "source_url","source");
+  const audit=type==="audits";
+  const isVerified=audit&&verified(x);
+  const ranking=get(x,"classement","ranking","arrivee");
+  return `<article class="card">
+   <h3>${esc(name)}</h3>
+   <p>Statut déclaré : ${esc(status)}</p>
+   ${audit?`<p class="${isVerified?"good":"warn"}">
+    ${isVerified?"Résultat déclaré vérifié avec source":
+    "Vérification officielle non établie"}</p>`:""}
+   <p>Classement / arrivée : ${renderRank(ranking)}</p>
+   <p>Source déclarée : ${esc(source)}</p>
+   <small>Enregistrement consulté sans modification.</small>
+  </article>`;
+ }).join("");
+}
+function parseResult(key,data){
+ if(key==="status"){
+  if(!data||typeof data!=="object"||Array.isArray(data))
+   throw Error("Format statut invalide");
+  state.status=data;
+  return;
+ }
+ const names={
+  courses:["courses"],
+  selections:["selections"],
+  figes:["figes"],
+  audits:["audits"]
+ };
+ const items=list(data,names[key]);
+ if(items===null)throw Error("Liste "+key+" absente ou invalide");
+ state[key]=items;
+}
+function renderAll(){
+ renderStatus();
+ renderCourses();
+ renderDetail();
+ renderRecords("locks",state.figes,"figes");
+ renderRecords("audits",state.audits,"audits");
+ displayNumber("nCourses",state.availability.courses
+  ?state.courses.length:null);
+ const future=state.courses.filter(c=>{
+  const v=timeOf(c);
+  if(!v)return false;
+  const d=new Date(v);
+  return Number.isFinite(d.getTime())&&d.getTime()>Date.now();
+ });
+ displayNumber("nUpcoming",state.availability.courses
+  ?future.length:null);
+ displayNumber("nSelections",state.availability.selections
+  ?state.selections.length:null);
+ displayNumber("nAudits",state.availability.audits
+  ?state.audits.filter(verified).length:null);
+}
+async function load(){
+ if(state.loading)return;
+ state.loading=true;
+ const generation=++state.generation;
+ $("load").disabled=true;
+ $("status").textContent="Consultation des cinq routes...";
+ reset();
+ try{
+  const base=baseURL();
+  if(!base)throw Error("Indiquez l'adresse HTTPS de votre API.");
+  const results=await Promise.all(
+   Object.keys(PATHS).map(key=>readRoute(base,key))
   );
-
-  $("central").innerHTML = central ? `
-    <p>État : ${safe(get(central,"statut","status"))}</p>
-    <p>Classement : ${renderRank(rankOf(central))}</p>
-    <p>Analyse :
-      ${safe(get(central,"analyse") ?? "Non disponible")}
-    </p>
-    <p>Pari :
-      ${safe(get(central,"pari") ?? "Non disponible")}
-    </p>
-  ` : `
-    <div class="empty">
-      Aucune synthèse X1000 publiée pour cette course.
-    </div>
-  `;
-
-  const locks = course ? linked(state.figes,course) : [];
-
-  $("locks").innerHTML = locks.length
-    ? locks.map(item => `
-      <div class="card">
-        <strong>${safe(get(item,"moteur"))}</strong>
-        · Version ${safe(get(item,"version"))}
-        <p>État : ${safe(get(item,"statut"))}</p>
-        <p>Classement : ${renderRank(rankOf(item))}</p>
-        <small>${safe(get(
-          item,"fige_a","created_at","timestamp"
-        ))}</small>
-      </div>
-    `).join("")
-    : '<div class="empty">Aucun FIGÉ disponible.</div>';
-
-  const results = course
-    ? [
-        ...linked(state.arrivees,course),
-        ...linked(state.audits,course)
-      ].filter(verified)
-    : [];
-
-  $("results").innerHTML = results.length
-    ? results.map(item => `
-      <div class="card">
-        <strong>Source officielle déclarée :</strong>
-        ${safe(get(
-          item,"source_officielle","source","source_url"
-        ))}
-        <p>Arrivée :
-          ${renderRank(get(
-            item,"arrivee","arrival",
-            "classement_officiel","resultat"
-          ))}
-        </p>
-        <small>
-          Vérification déclarée dans les données ;
-          non contrôlée indépendamment ici.
-        </small>
-      </div>
-    `).join("")
-    : '<div class="empty">Aucun résultat vérifié disponible.</div>';
-}
-
-async function load() {
-  const button = $("load");
-  button.disabled = true;
-
-  state.errors = [];
-  state.sources = [];
-  state.status = null;
-  state.collection = null;
-
-  try {
-    let base = $("apiBase").value.trim().replace(/\/+$/,"");
-
-    if (base) {
-      const url = new URL(base);
-
-      if (url.protocol !== "https:" ||
-          url.username || url.password ||
-          url.search || url.hash) {
-        throw Error("Adresse API HTTPS invalide");
-      }
-
-      base = url.href.replace(/\/+$/,"");
-    }
-
-    const keys = [
-      "courses","selections","figes","audits"
-    ];
-
-    await Promise.all(keys.map(async key => {
-      const url = base
-        ? base + "/api/" + key
-        : "./" + key + ".json";
-
-      const data = await readSource(url,key);
-
-      state[key] = data ? asList(data,[key]) : [];
-
-      if (key === "courses") {
-        state.collection = data;
-      }
-    }));
-
-    if (base) {
-      state.status = await readSource(
-        base + "/api/status","status"
-      );
-      state.arrivees = [];
-    } else {
-      const data = await readSource(
-        "./arrivees.json","arrivees"
-      );
-      state.arrivees = data
-        ? asList(data,["arrivees","resultats"])
-        : [];
-    }
-
-    const now = new Date();
-
-    $("updated").textContent =
-      "Actualisé : " + now.toLocaleString("fr-FR");
-
-    $("connection").textContent =
-      state.sources.length
-        ? "Sources accessibles : " +
-          state.sources.length + "/5"
-        : "Aucune source accessible";
-
-    $("connection").className =
-      "pill " + (
-        state.sources.length ? "good" : "warn"
-      );
-
-    $("nCourses").textContent = state.courses.length;
-
-    $("nUpcoming").textContent =
-      state.courses.filter(course => {
-        const date = new Date(timeOf(course));
-        return !Number.isNaN(date.getTime()) &&
-          date > now;
-      }).length;
-
-    $("nSelections").textContent =
-      state.selections.length;
-
-    $("nResults").textContent =
-      state.arrivees.filter(verified).length;
-
-    $("status").textContent =
-      state.sources.length
-        ? "Sources accessibles : " +
-          state.sources.join(" · ")
-        : "Aucune donnée accessible.";
-
-    $("collection").textContent =
-      "Collecte : " +
-      (state.collection?.statut || "NON_CONFIGURÉE") +
-      " · Données vérifiées : " +
-      (state.collection?.donnees_verifiees === true
-        ? "Oui" : "Non / non attesté");
-
-    if (state.collection?.statut === "ERREUR_COLLECTE") {
-      state.errors.push(
-        "Échec de collecte signalé par l'API."
-      );
-    }
-
-    state.selected = null;
-
-    renderCourses();
-    renderDetail();
-    renderSupervision();
-
-  } catch (error) {
-    $("status").textContent =
-      "Erreur : " + error.message;
-    state.errors.push(error.message);
-    renderSupervision();
-  } finally {
-    button.disabled = false;
+  if(generation!==state.generation)return;
+  const routeHtml=[];
+  for(const r of results){
+   let ok=r.ok;
+   let error=r.error||"";
+   if(ok){
+    try{parseResult(r.key,r.data)}
+    catch(e){ok=false;error=e.message}
+   }
+   state.availability[r.key]=ok;
+   if(!ok)state.errors.push(r.key+": "+error);
+   routeHtml.push(`<p class="${ok?"good":"error"}">
+    ${esc(PATHS[r.key])} : ${ok?"OK":"ÉCHEC — "+error}
+   </p>`);
   }
+  $("routes").innerHTML=routeHtml.join("");
+  const successful=Object.values(state.availability).filter(Boolean).length;
+  $("connection").textContent=successful===5
+   ?"5/5 routes accessibles":successful+"/5 routes accessibles";
+  $("status").textContent=successful===5
+   ?"Consultation terminée. Vérifiez les statuts métier."
+   :"Consultation partielle : certaines routes sont indisponibles.";
+  $("updated").textContent="Actualisation : "+
+   new Date().toLocaleTimeString("fr-FR");
+ }catch(e){
+  state.errors.push(e.message);
+  $("connection").textContent="Connexion non établie";
+  $("status").textContent=e.message;
+  $("routes").textContent="Aucune requête valide effectuée.";
+ }finally{
+  if(generation===state.generation){
+   $("diagnostics").textContent=state.errors.join("\n")||
+    "Aucune erreur HTTP détectée.";
+   renderAll();
+   state.loading=false;
+   $("load").disabled=false;
+  }
+ }
 }
-
+function schedule(){
+ if(timer!==null)clearInterval(timer);
+ timer=null;
+ const delay=Number($("refresh").value);
+ if(delay>0)timer=setInterval(()=>{
+  if(!document.hidden&&!state.loading&&$("apiBase").value.trim())
+   load();
+ },delay);
+}
 $("load").addEventListener("click",load);
+$("refresh").addEventListener("change",schedule);
 $("search").addEventListener("input",renderCourses);
 $("discipline").addEventListener("change",renderCourses);
+$("apiBase").addEventListener("change",()=>{
+ $("connection").textContent="Nouvelle adresse non vérifiée";
+});
+renderAll();
+schedule();
 
-renderCourses();
-renderDetail();
-renderSupervision();
-load();
-
+/*
+ Configuration optionnelle avant publication :
+ remplacez la chaîne vide ci-dessous par l'origine
+ HTTPS réelle de votre API, sans chemin /api.
+ Ne jamais mettre de secret ou de jeton ici.
+*/
+const DEFAULT_API_BASE="";
+if(DEFAULT_API_BASE){
+ $("apiBase").value=DEFAULT_API_BASE;
+ load();
+}
 </script>
 </body>
 </html>
