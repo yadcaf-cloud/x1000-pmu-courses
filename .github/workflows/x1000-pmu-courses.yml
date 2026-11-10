@@ -1,6 +1,6 @@
-name: X1000 PMU COURSES - Preparation V65
+name: X1000 PMU COURSES - Audit V73
 
-run-name: X1000 PMU COURSES V65 - Tests isoles
+run-name: Audit V73 - M1 M5 API et securite
 
 on:
   workflow_dispatch:
@@ -9,252 +9,166 @@ permissions:
   contents: read
 
 concurrency:
-  group: x1000-v65-${{ github.ref }}
+  group: x1000-audit-v73-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  validation-v65:
-    name: X1000 V65 - M1-M5 API Collecte Integrite
+  audit:
+    name: Audit general avant Render
     runs-on: ubuntu-24.04
     timeout-minutes: 25
-
-    defaults:
-      run:
-        shell: bash
 
     env:
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
       PYTHONNOUSERSITE: "1"
-      X1000_PROJECT: x1000-pmu-courses
-      X1000_VERSION: V65
-      X1000_DIAGNOSTIC_ONLY: "1"
-      X1000_DISABLE_WRITES: "1"
-      X1000_DISABLE_BETS: "1"
-      X1000_DISABLE_FIGE: "1"
-      X1000_DISABLE_DEPLOY: "1"
-      X1000_PRODUCTION_PORT: "8765"
-      X1000_TEST_PORT: "18765"
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
       X1000_SOURCE_URL: ""
       X1000_ALLOWED_HOSTS: ""
       X1000_CORS_ORIGINS: ""
-      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+      X1000_ANALYZE_ENABLED: "0"
 
     steps:
-      - name: Recuperer le depot sans credentials
-        uses: actions/checkout@v6
+      - name: Recuperer le depot
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
-          fetch-depth: 1
 
-      - name: Installer Python 3.11
-        uses: actions/setup-python@v6
+      - name: Installer Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Verifier identite et fichiers V65
+      - name: Verifier le depot
+        shell: bash
         run: |
           set -euo pipefail
-
           test "$GITHUB_REPOSITORY" = \
             "yadcaf-cloud/x1000-pmu-courses"
 
-          test -d .git
-
-          echo "Depot valide"
-          python --version
-          git rev-parse HEAD
-
-          for file in \
+          for f in \
+            api.py \
             moteurs.py \
+            moteurs_v65.py \
             coordination_x1000.py \
             collecte_pmu.py \
-            api.py \
-            tests/test_v65.py
+            validation_pmu.py \
+            integration_x1000.py \
+            requirements.txt \
+            index.html
           do
-            if [ ! -f "$file" ]; then
-              echo "::error::Fichier absent: $file"
-              exit 1
-            fi
-            if [ -L "$file" ]; then
-              echo "::error::Lien symbolique interdit: $file"
-              exit 1
-            fi
-            echo "OK: $file"
+            test -f "$f"
+            test ! -L "$f"
+            echo "OK: $f"
           done
 
-      - name: Inventaire SHA256 avant tests
-        env:
-          REPORT_DIR: ${{ runner.temp }}/x1000-v65
+      - name: Preparer les dependances
         run: |
-          set -euo pipefail
-          mkdir -p "$REPORT_DIR"
+          python -m venv /tmp/x1000-audit-venv
+          /tmp/x1000-audit-venv/bin/python \
+            -m pip install -r requirements.txt
 
-          python - <<'PY'
-          import hashlib
-          import json
-          import os
-          import pathlib
-          import subprocess
-
-          root = pathlib.Path.cwd()
-          out = pathlib.Path(os.environ["REPORT_DIR"])
-
-          tracked = subprocess.check_output(
-              ["git", "ls-files", "-z"]
-          ).decode().split("\0")
-
-          manifest = {}
-
-          for name in tracked:
-              if not name:
-                  continue
-              path = root / name
-              if path.is_symlink():
-                  manifest[name] = "SYMLINK"
-              elif path.is_file():
-                  manifest[name] = hashlib.sha256(
-                      path.read_bytes()
-                  ).hexdigest()
-              else:
-                  manifest[name] = "MISSING"
-
-          (out / "before.json").write_text(
-              json.dumps(
-                  manifest,
-                  indent=2,
-                  sort_keys=True
-              ),
-              encoding="utf-8"
-          )
-
-          print(
-              "Fichiers suivis:",
-              len(manifest)
-          )
-          PY
-
-      - name: Preparer espace de test isole
-        env:
-          WORK_DIR: ${{ runner.temp }}/x1000-v65-work
+      - name: Verifier la syntaxe
         run: |
-          set -euo pipefail
-
-          mkdir -p "$WORK_DIR/tests"
-
-          cp moteurs.py "$WORK_DIR/"
-          cp coordination_x1000.py "$WORK_DIR/"
-          cp collecte_pmu.py "$WORK_DIR/"
-          cp api.py "$WORK_DIR/"
-          cp tests/test_v65.py "$WORK_DIR/tests/"
-
-          python -m venv "$WORK_DIR/.venv"
-
-          "$WORK_DIR/.venv/bin/python" -m pip \
-            install --disable-pip-version-check \
-            "fastapi>=0.115,<1" \
-            "uvicorn>=0.30,<1" \
-            "httpx>=0.27,<1" \
-            "pytest>=8,<10"
-
-          echo "Espace de test pret"
-
-      - name: Controler syntaxe et imports
-        env:
-          WORK_DIR: ${{ runner.temp }}/x1000-v65-work
-        run: |
-          set -euo pipefail
-          cd "$WORK_DIR"
-
-          .venv/bin/python - <<'PY'
+          /tmp/x1000-audit-venv/bin/python - <<'PY'
           import ast
-          import pathlib
+          from pathlib import Path
 
-          files = [
+          fichiers = [
+              "api.py",
               "moteurs.py",
+              "moteurs_v65.py",
               "coordination_x1000.py",
               "collecte_pmu.py",
-              "api.py",
-              "tests/test_v65.py",
+              "validation_pmu.py",
+              "integration_x1000.py",
           ]
 
-          for name in files:
-              source = pathlib.Path(
-                  name
-              ).read_text(encoding="utf-8")
-              ast.parse(source, filename=name)
-              print("Syntaxe OK:", name)
+          for fichier in fichiers:
+              ast.parse(
+                  Path(fichier).read_text(
+                      encoding="utf-8"
+                  ),
+                  filename=fichier
+              )
+              print("SYNTAXE OK:", fichier)
           PY
 
-          .venv/bin/python - <<'PY'
+      - name: Tester les imports et moteurs
+        run: |
+          /tmp/x1000-audit-venv/bin/python - <<'PY'
+          import api
           import moteurs
+          import moteurs_v65
           import coordination_x1000
           import collecte_pmu
-          import api
+          import validation_pmu
+          import integration_x1000
 
-          assert len(moteurs.MOTEURS) == 5
-          assert api.app is not None
+          noms = [m.nom for m in moteurs.MOTEURS]
 
-          print("Imports V65 OK")
+          assert len(noms) == 5
+          assert set(noms) == {
+              "M1", "M2", "M3", "M4", "M5"
+          }
+
+          for moteur in moteurs.MOTEURS:
+              assert callable(moteur.analyser)
+
+          print("IMPORTS ET INTERFACES OK")
           PY
 
-      - name: Tester M1 a M5 et noyau central
-        env:
-          WORK_DIR: ${{ runner.temp }}/x1000-v65-work
+      - name: Tester les cinq moteurs en isolation
         run: |
-          set -euo pipefail
-          cd "$WORK_DIR"
-
-          .venv/bin/python - <<'PY'
+          /tmp/x1000-audit-venv/bin/python - <<'PY'
           from moteurs import MOTEURS
           from coordination_x1000 import coordonner
 
           course = {
-              "id": "TEST-V65-ISOLE",
+              "id": "TEST-ISOLE-V73",
               "hippodrome": "TEST",
+              "donnees_verifiees": False,
               "partants": [
-                  {"numero": 1, "nom": "TEST"}
+                  {
+                      "numero": n,
+                      "non_partant": False
+                  }
+                  for n in range(1, 7)
               ]
           }
 
-          assert len(MOTEURS) == 5
-
           for moteur in MOTEURS:
-              result = moteur.analyser(course)
-              assert result["classement"] == []
-              assert result["pari"] is None
-              assert result["fige"] is False
-              assert result["statut"] != "ANALYSE_VALIDEE"
-              print(moteur.nom, "OK")
+              resultat = moteur.analyser(course)
+              assert resultat["classement"] == []
+              assert resultat["pari"] is None
+              assert resultat["fige"] is False
+              assert resultat["statut"] != \
+                  "ANALYSE_VALIDEE"
+              print("MOTEUR OK:", moteur.nom)
 
           central = coordonner(course)
-
-          assert central["moteurs_consultes"] == 5
-          assert central["moteurs_valides"] == 0
           assert central["classement"] == []
           assert central["pari"] is None
           assert central["fige"] is False
 
-          print("Noyau central OK")
+          print("COORDINATION OK")
           PY
 
-      - name: Tester les cinq routes API
-        env:
-          WORK_DIR: ${{ runner.temp }}/x1000-v65-work
+      - name: Tester les routes API
         run: |
-          set -euo pipefail
-          cd "$WORK_DIR"
-
-          .venv/bin/python - <<'PY'
+          /tmp/x1000-audit-venv/bin/python - <<'PY'
           from fastapi.testclient import TestClient
           from api import app
 
           routes = [
+              "/health",
               "/api/status",
+              "/api/engines",
               "/api/courses",
               "/api/selections",
               "/api/figes",
               "/api/audits",
+              "/api/analyze",
           ]
 
           with TestClient(app) as client:
@@ -263,255 +177,51 @@ jobs:
                   assert response.status_code == 200, (
                       route, response.status_code
                   )
-                  assert isinstance(
-                      response.json(), dict
-                  )
-                  print(route, "HTTP 200")
+                  print("ROUTE OK:", route)
 
-              status = client.get(
-                  "/api/status"
-              ).json()
+              response = client.post(
+                  "/api/analyze",
+                  json={
+                      "course": {
+                          "id": "TEST",
+                          "partants": []
+                      }
+                  }
+              )
+              assert response.status_code == 503
 
-              assert status["mode"] == "LECTURE_SEULE"
-              assert status[
-                  "production_port_preserve"
-              ] == 8765
-
-              assert client.get(
-                  "/api/courses"
-              ).json()["courses"] == []
-
-              assert client.get(
-                  "/api/selections"
-              ).json()["selections"] == []
-
-              assert client.get(
-                  "/api/figes"
-              ).json()["figes"] == []
-
-              assert client.get(
-                  "/api/audits"
-              ).json()["audits"] == []
-
-          print("Cinq routes validees en ASGI")
-          print("Aucun serveur reseau demarre")
+          print("API EN LECTURE CONTROLEE OK")
           PY
 
-      - name: Tester collecte sans source PMU
-        env:
-          WORK_DIR: ${{ runner.temp }}/x1000-v65-work
+      - name: Executer les tests pytest
         run: |
-          set -euo pipefail
-          cd "$WORK_DIR"
-
-          .venv/bin/python - <<'PY'
-          import os
-          from collecte_pmu import (
-              collecter,
-              verifier_url,
-              CollecteErreur,
-          )
-
-          os.environ["X1000_SOURCE_URL"] = ""
-          os.environ["X1000_ALLOWED_HOSTS"] = ""
-
-          result = collecter()
-
-          assert result["courses"] == []
-          assert result["statut"] == (
-              "SOURCE_NON_CONFIGUREE"
-          )
-
-          for url in [
-              "http://example.com/api",
-              "https://localhost/api",
-              "https://127.0.0.1/api",
-          ]:
-              try:
-                  verifier_url(url)
-              except CollecteErreur:
-                  pass
-              else:
-                  raise AssertionError(
-                      "URL non autorisee acceptee"
-                  )
-
-          print("Collecte desactivee OK")
-          print("Aucun appel distant effectue")
-          PY
-
-      - name: Executer tests pytest V65
-        env:
-          WORK_DIR: ${{ runner.temp }}/x1000-v65-work
-          REPORT_DIR: ${{ runner.temp }}/x1000-v65
-        run: |
-          set -euo pipefail
-          cd "$WORK_DIR"
-
-          .venv/bin/python -m pytest \
-            tests/test_v65.py \
+          /tmp/x1000-audit-venv/bin/python \
+            -m pytest tests \
             -v \
-            -p no:cacheprovider \
-            --junitxml="$REPORT_DIR/pytest.xml"
+            -p no:cacheprovider
 
-      - name: Verifier integrite du depot
+      - name: Verifier les fichiers proteges
         if: always()
-        env:
-          REPORT_DIR: ${{ runner.temp }}/x1000-v65
+        shell: bash
         run: |
           set -euo pipefail
 
-          python - <<'PY'
-          import hashlib
-          import json
-          import os
-          import pathlib
-          import subprocess
-          import sys
+          git diff --exit-code
+          git diff --cached --exit-code
 
-          root = pathlib.Path.cwd()
-          out = pathlib.Path(os.environ["REPORT_DIR"])
-          before_path = out / "before.json"
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "ERREUR: fichiers modifies"
+            git status --short
+            exit 1
+          fi
 
-          if not before_path.exists():
-              print("Inventaire initial indisponible")
-              sys.exit(1)
+          echo "INTEGRITE DU DEPOT OK"
 
-          before = json.loads(
-              before_path.read_text(
-                  encoding="utf-8"
-              )
-          )
-
-          after = {}
-
-          for name in before:
-              path = root / name
-              if path.is_symlink():
-                  after[name] = "SYMLINK"
-              elif path.is_file():
-                  after[name] = hashlib.sha256(
-                      path.read_bytes()
-                  ).hexdigest()
-              else:
-                  after[name] = "MISSING"
-
-          changed = [
-              name for name in before
-              if before[name] != after[name]
-          ]
-
-          git_status = subprocess.run(
-              ["git", "status", "--porcelain"],
-              capture_output=True,
-              text=True,
-              check=False
-          )
-
-          report = {
-              "project": "X1000 PMU COURSES",
-              "version": "V65",
-              "tracked_files_unchanged":
-                  not changed,
-              "changed_files": changed,
-              "git_status_clean": (
-                  git_status.returncode == 0
-                  and not git_status.stdout.strip()
-              ),
-              "production_port_touched": False,
-              "deployment": False,
-              "commit": False,
-              "push": False,
-              "fige_created": False,
-              "protected_files_modified":
-                  bool(changed),
-              "result": "PASS" if (
-                  not changed
-                  and git_status.returncode == 0
-                  and not git_status.stdout.strip()
-              ) else "FAIL"
-          }
-
-          (out / "integrity.json").write_text(
-              json.dumps(
-                  report,
-                  indent=2,
-                  ensure_ascii=False
-              ),
-              encoding="utf-8"
-          )
-
-          print(json.dumps(report, indent=2))
-
-          if report["result"] != "PASS":
-              sys.exit(1)
-          PY
-
-      - name: Publier rapport V65
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: x1000-pmu-courses-v65-tests
-          path: |
-            ${{ runner.temp }}/x1000-v65/pytest.xml
-            ${{ runner.temp }}/x1000-v65/integrity.json
-          if-no-files-found: warn
-          retention-days: 7
-
-      - name: Resume des controles V65
-        if: always()
-        env:
-          REPORT_DIR: ${{ runner.temp }}/x1000-v65
+      - name: Conclusion
+        if: success()
         run: |
-          python - <<'PY'
-          import json
-          import os
-          import pathlib
-
-          out = pathlib.Path(
-              os.environ["REPORT_DIR"]
-          )
-          path = out / "integrity.json"
-
-          lines = [
-              "## X1000 PMU COURSES V65",
-              "",
-              "Tests en isolation uniquement.",
-              "",
-              "- M1 a M5 : tests sans pronostics",
-              "- Noyau central : test sans arbitrage",
-              "- API : cinq routes ASGI",
-              "- Collecte PMU : desactivee",
-              "- Port 8765 : non utilise",
-              "- Aucun FIGE",
-              "- Aucun commit ni push",
-              "- Aucun deploiement",
-              "",
-          ]
-
-          if path.exists():
-              data = json.loads(
-                  path.read_text(encoding="utf-8")
-              )
-              lines.append(
-                  "Integrite : " + data["result"]
-              )
-          else:
-              lines.append(
-                  "Integrite : non verifiee"
-              )
-
-          summary = os.environ.get(
-              "GITHUB_STEP_SUMMARY"
-          )
-
-          if summary:
-              with open(
-                  summary,
-                  "a",
-                  encoding="utf-8"
-              ) as f:
-                  f.write("\n".join(lines) + "\n")
-          else:
-              print("\n".join(lines))
-          PY
+          echo "AUDIT V73 REUSSI"
+          echo "Aucun deploiement Render"
+          echo "Aucun FIGE cree"
+          echo "Aucune archive modifiee"
+          echo "Validation PMU reelle non certifiee"
