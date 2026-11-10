@@ -1,33 +1,21 @@
-name: X1000 PMU COURSES - Preparation V63
+name: X1000 PMU COURSES - Preparation V64
 
-run-name: X1000 PMU COURSES V63 - Controle isole
+run-name: X1000 PMU COURSES V64 - Diagnostic protege
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - ".github/workflows/x1000-pmu-courses.yml"
-      - "**/*.py"
-      - "requirements*.txt"
-      - "pyproject.toml"
-  pull_request:
-    paths:
-      - ".github/workflows/x1000-pmu-courses.yml"
-      - "**/*.py"
-      - "requirements*.txt"
-      - "pyproject.toml"
 
 permissions:
   contents: read
 
 concurrency:
-  group: x1000-v63-${{ github.ref }}
+  group: x1000-v64-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   diagnostic:
-    name: X1000 V63 - Diagnostic et integrite
-    runs-on: ubuntu-latest
+    name: X1000 V64 - Diagnostic et integrite
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
 
     defaults:
@@ -38,28 +26,28 @@ jobs:
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
       X1000_PROJECT: x1000-pmu-courses
-      X1000_VERSION: V63
+      X1000_VERSION: V64
       X1000_DIAGNOSTIC_ONLY: "1"
       X1000_DISABLE_WRITES: "1"
-      X1000_PRODUCTION_PORT: "8765"
-      X1000_TEST_PORT: "18765"
       X1000_DISABLE_BETS: "1"
       X1000_DISABLE_FIGE: "1"
       X1000_DISABLE_DEPLOY: "1"
+      X1000_PRODUCTION_PORT: "8765"
+      X1000_TEST_PORT: "18765"
 
     steps:
-      - name: Recuperer le depot
-        uses: actions/checkout@v4
+      - name: Recuperer le depot en lecture seule
+        uses: actions/checkout@v6
         with:
           persist-credentials: false
           fetch-depth: 1
 
       - name: Installer Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
-      - name: Verifier le depot et preparer les rapports
+      - name: Verifier le depot
         run: |
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = \
@@ -67,11 +55,11 @@ jobs:
           test -d .git
           python --version
           git rev-parse HEAD
-          mkdir -p "$RUNNER_TEMP/x1000-v63"
+          mkdir -p "$RUNNER_TEMP/x1000-v64"
 
-      - name: Executer le diagnostic V63
+      - name: Diagnostic V64 en lecture seule
         env:
-          REPORT_DIR: ${{ runner.temp }}/x1000-v63
+          REPORT_DIR: ${{ runner.temp }}/x1000-v64
         run: |
           set -euo pipefail
 
@@ -83,13 +71,8 @@ jobs:
           import os
           import pathlib
           import re
-          import shutil
-          import socket
           import subprocess
           import sys
-          import tempfile
-          import urllib.request
-          import urllib.error
 
           ROOT = pathlib.Path.cwd().resolve()
           OUT = pathlib.Path(
@@ -110,7 +93,7 @@ jobs:
               "audit", "resultat"
           )
 
-          ROUTES = [
+          EXPECTED_ROUTES = [
               "/api/status",
               "/api/courses",
               "/api/selections",
@@ -126,91 +109,76 @@ jobs:
               "orchestrateur.py"
           }
 
-          def digest(path):
+          def sha256(path):
               h = hashlib.sha256()
-              with path.open("rb") as stream:
-                  for block in iter(
-                      lambda: stream.read(65536),
-                      b""
+              with path.open("rb") as f:
+                  for chunk in iter(
+                      lambda: f.read(65536), b""
                   ):
-                      h.update(block)
+                      h.update(chunk)
               return h.hexdigest()
 
-          def inventory(root):
+          def inventory():
               result = {}
-              for directory, dirs, files in os.walk(
-                  root, followlinks=False
+              for base, dirs, files in os.walk(
+                  ROOT, followlinks=False
               ):
                   dirs[:] = [
                       d for d in dirs
                       if d not in EXCLUDED
                       and not (
-                          pathlib.Path(directory) / d
+                          pathlib.Path(base) / d
                       ).is_symlink()
                   ]
-                  for filename in files:
-                      p = pathlib.Path(directory) / filename
-                      if not p.is_file() or p.is_symlink():
+                  for name in files:
+                      p = pathlib.Path(base) / name
+                      if p.is_symlink() or not p.is_file():
                           continue
-                      rel = p.relative_to(root).as_posix()
-                      result[rel] = digest(p)
+                      rel = p.relative_to(
+                          ROOT
+                      ).as_posix()
+                      result[rel] = sha256(p)
               return result
 
-          def protected(path):
+          def is_protected(path):
               return any(
                   word in path.lower()
                   for word in PROTECTED
               )
 
-          def command(args, cwd, timeout=20, env=None):
-              try:
-                  p = subprocess.run(
-                      args,
-                      cwd=cwd,
-                      capture_output=True,
-                      text=True,
-                      timeout=timeout,
-                      check=False,
-                      env=env
-                  )
-                  return {
-                      "exit_code": p.returncode,
-                      "stdout": p.stdout[-3000:],
-                      "stderr": p.stderr[-3000:]
-                  }
-              except Exception as exc:
-                  return {
-                      "exit_code": None,
-                      "error": str(exc)
-                  }
+          def git_command(*args):
+              p = subprocess.run(
+                  ["git", *args],
+                  cwd=ROOT,
+                  capture_output=True,
+                  text=True,
+                  check=False,
+                  timeout=20
+              )
+              return {
+                  "code": p.returncode,
+                  "stdout": p.stdout[-2000:],
+                  "stderr": p.stderr[-2000:]
+              }
 
-          def status(items):
-              if not items:
-                  return "absent"
-              if len(items) == 1:
-                  return "candidate_unique"
-              return "ambiguous"
-
-          before = inventory(ROOT)
+          before = inventory()
           protected_before = {
               k: v for k, v in before.items()
-              if protected(k)
+              if is_protected(k)
           }
 
           report = {
               "project": "X1000 PMU COURSES",
-              "version": "V63",
+              "version": "V64",
               "timestamp_utc":
                   datetime.datetime.now(
                       datetime.timezone.utc
                   ).isoformat(),
-              "repository": os.environ.get(
-                  "GITHUB_REPOSITORY"
-              ),
-              "mode": "isolated_diagnostic",
+              "repository":
+                  os.environ.get("GITHUB_REPOSITORY"),
+              "mode": "static_read_only",
               "production_port": 8765,
-              "production_port_tested": False,
-              "temporary_port": 18765,
+              "production_port_touched": False,
               "engines": {},
               "central": {},
               "syntax": {},
@@ -225,61 +193,57 @@ jobs:
               "errors": []
           }
 
-          report["git"]["before"] = command(
-              ["git", "status", "--porcelain"],
-              ROOT
+          report["git"]["before"] = git_command(
+              "status", "--porcelain"
           )
-          report["git"]["head"] = command(
-              ["git", "rev-parse", "HEAD"],
-              ROOT
+          report["git"]["head"] = git_command(
+              "rev-parse", "HEAD"
           )
-
-          # Sauvegarde de controle hors depot.
-          # Les donnees protegees restent intactes.
-          backup_dir = OUT / "backup-manifest"
-          backup_dir.mkdir(exist_ok=True)
 
           manifest = {
               "files": before,
               "protected": protected_before
           }
 
-          backup_file = backup_dir / "manifest.json"
-          backup_file.write_text(
+          manifest_path = OUT / "manifest.json"
+          manifest_path.write_text(
               json.dumps(
                   manifest,
                   ensure_ascii=False,
-                  indent=2
+                  indent=2,
+                  sort_keys=True
               ),
               encoding="utf-8"
           )
 
           report["backup"] = {
-              "manifest": str(backup_file),
-              "sha256": digest(backup_file),
               "type": "hash_manifest",
-              "full_file_backup": False,
-              "protected_files_copied": False,
-              "note": (
-                  "Empreintes de controle uniquement; "
-                  "aucune copie des donnees protegees"
-              )
+              "manifest_sha256": sha256(
+                  manifest_path
+              ),
+              "full_backup": False,
+              "protected_data_copied": False,
+              "note":
+                  "Inventaire SHA256 sans copie des donnees"
           }
 
-          # Analyse syntaxique sans import applicatif.
           pyfiles = sorted(
               p for p in before
               if p.endswith(".py")
           )
+
           trees = {}
 
           for path in pyfiles:
               try:
-                  source = (ROOT / path).read_text(
+                  source = (
+                      ROOT / path
+                  ).read_text(
                       encoding="utf-8-sig"
                   )
                   trees[path] = ast.parse(
-                      source, filename=path
+                      source,
+                      filename=path
                   )
                   report["syntax"][path] = "OK"
               except Exception as exc:
@@ -288,7 +252,6 @@ jobs:
                       "Syntaxe invalide: " + path
                   )
 
-          # Identifier les contrats de chaque moteur.
           for number in range(1, 6):
               name = f"M{number}"
               pattern = re.compile(
@@ -303,62 +266,85 @@ jobs:
               ]
 
               contracts = {}
+
               for path in candidates:
                   tree = trees.get(path)
                   if tree is None:
                       continue
 
+                  functions = [
+                      n.name for n in tree.body
+                      if isinstance(
+                          n,
+                          (
+                              ast.FunctionDef,
+                              ast.AsyncFunctionDef
+                          )
+                      )
+                  ]
+
+                  classes = [
+                      n.name for n in tree.body
+                      if isinstance(
+                          n, ast.ClassDef
+                      )
+                  ]
+
+                  self_test = any(
+                      isinstance(n, ast.Constant)
+                      and n.value == "--self-test"
+                      for n in ast.walk(tree)
+                  )
+
                   contracts[path] = {
-                      "functions": [
-                          n.name for n in tree.body
-                          if isinstance(
-                              n, (
-                                  ast.FunctionDef,
-                                  ast.AsyncFunctionDef
-                              )
-                          )
-                      ],
-                      "classes": [
-                          n.name for n in tree.body
-                          if isinstance(n, ast.ClassDef)
-                      ],
-                      "self_test_declared":
-                          any(
-                              isinstance(n, ast.Constant)
-                              and n.value == "--self-test"
-                              for n in ast.walk(tree)
-                          )
+                      "functions": functions,
+                      "classes": classes,
+                      "self_test_declared": self_test
                   }
 
               report["engines"][name] = {
                   "candidates": candidates,
-                  "status": status(candidates),
+                  "status": (
+                      "absent" if not candidates
+                      else "candidate_unique"
+                      if len(candidates) == 1
+                      else "ambiguous"
+                  ),
                   "contracts": contracts,
                   "executed": False,
-                  "validated": False,
-                  "reason": (
-                      "Execution conditionnelle "
-                      "en environnement isole"
-                  )
+                  "validated": False
               }
 
-          # Noyau central.
+              if not candidates:
+                  report["warnings"].append(
+                      name + ": moteur non detecte"
+                  )
+
           central = [
               p for p in pyfiles
-              if pathlib.Path(p).name.lower()
-              in CENTRAL_NAMES
+              if pathlib.Path(
+                  p
+              ).name.lower() in CENTRAL_NAMES
           ]
 
           report["central"] = {
               "candidates": central,
-              "status": status(central),
+              "status": (
+                  "absent" if not central
+                  else "candidate_unique"
+                  if len(central) == 1
+                  else "ambiguous"
+              ),
               "executed": False,
               "validated": False
           }
 
-          # Inventaire des routes API.
-          declared_routes = {}
-          api_files = set()
+          if not central:
+              report["warnings"].append(
+                  "Noyau central non detecte"
+              )
+
+          routes = {}
           asgi_candidates = []
 
           for path, tree in trees.items():
@@ -369,18 +355,27 @@ jobs:
                           and t.id == "app"
                           for t in node.targets
                       ):
-                          if isinstance(node.value, ast.Call):
-                              fn = node.value.func
+                          value = node.value
+                          if isinstance(
+                              value, ast.Call
+                          ):
+                              fn = value.func
                               if (
-                                  isinstance(fn, ast.Name)
+                                  isinstance(
+                                      fn, ast.Name
+                                  )
                                   and fn.id in {
-                                      "FastAPI", "Starlette"
+                                      "FastAPI",
+                                      "Starlette"
                                   }
                               ):
-                                  asgi_candidates.append(path)
+                                  asgi_candidates.append(
+                                      path
+                                  )
 
                   if not isinstance(
-                      node, (
+                      node,
+                      (
                           ast.FunctionDef,
                           ast.AsyncFunctionDef
                       )
@@ -388,16 +383,19 @@ jobs:
                       continue
 
                   for dec in node.decorator_list:
-                      if not isinstance(dec, ast.Call):
+                      if not isinstance(
+                          dec, ast.Call
+                      ):
                           continue
                       if not isinstance(
                           dec.func, ast.Attribute
                       ):
                           continue
-                      if dec.func.attr.lower() not in {
-                          "get", "post", "put",
-                          "delete", "patch",
-                          "route", "api_route"
+                      if dec.func.attr not in {
+                          "get", "post",
+                          "put", "delete",
+                          "patch", "route",
+                          "api_route"
                       }:
                           continue
                       if not dec.args:
@@ -405,11 +403,14 @@ jobs:
 
                       arg = dec.args[0]
                       if (
-                          isinstance(arg, ast.Constant)
-                          and isinstance(arg.value, str)
+                          isinstance(
+                              arg, ast.Constant
+                          )
+                          and isinstance(
+                              arg.value, str
+                          )
                       ):
-                          api_files.add(path)
-                          declared_routes.setdefault(
+                          routes.setdefault(
                               arg.value, []
                           ).append({
                               "file": path,
@@ -418,29 +419,30 @@ jobs:
                           })
 
           report["api"] = {
-              "files": sorted(api_files),
-              "declared_routes": declared_routes,
-              "expected_routes": ROUTES,
+              "expected_routes": EXPECTED_ROUTES,
+              "declared_routes": routes,
               "route_presence": {
-                  r: r in declared_routes
-                  for r in ROUTES
+                  route: route in routes
+                  for route in EXPECTED_ROUTES
               },
               "asgi_candidates": sorted(
                   set(asgi_candidates)
               ),
               "http_tested": False,
-              "http_results": {},
-              "asgi_tested": False
+              "asgi_tested": False,
+              "note":
+                  "Detection statique sans import ni serveur"
           }
 
-          # Inventaire des sources hippiques.
           domains = set()
           domain_pattern = re.compile(
               r"https?://([a-zA-Z0-9.-]+)"
           )
 
           for path in pyfiles:
-              content = (ROOT / path).read_text(
+              content = (
+                  ROOT / path
+              ).read_text(
                   encoding="utf-8",
                   errors="replace"
               )
@@ -453,13 +455,10 @@ jobs:
               "authorized_domains": [],
               "authorization_verified": False,
               "http_tested": False,
-              "reason": (
-                  "Liste blanche non fournie; "
-                  "aucun acces distant automatique"
-              )
+              "note":
+                  "Aucun appel aux sources PMU"
           }
 
-          # Dependances detectees.
           manifests = sorted(
               p for p in before
               if (
@@ -475,337 +474,260 @@ jobs:
 
           report["dependencies"] = {
               "manifests": manifests,
-              "installed": False,
-              "reason": (
-                  "Aucune installation arbitraire "
-                  "de dependances applicatives"
-              )
+              "installed": False
           }
 
-          # Creer un environnement de test isole.
-          # Ne jamais utiliser le repertoire original
-          # comme espace d'execution.
-          with tempfile.TemporaryDirectory(
-              prefix="x1000-v63-"
-          ) as temporary:
-              sandbox = pathlib.Path(temporary)
-              workspace = sandbox / "project"
-              workspace.mkdir()
+          after = inventory()
 
-              # Copie uniquement des fichiers Python
-              # non proteges et des manifestes.
-              copied = []
-              for rel in sorted(
-                  set(pyfiles + manifests)
-              ):
-                  if protected(rel):
-                      continue
-                  src = ROOT / rel
-                  dst = workspace / rel
-                  dst.parent.mkdir(
-                      parents=True, exist_ok=True
-                  )
-                  shutil.copy2(src, dst)
-                  copied.append(rel)
+          changed = sorted(
+              k for k in set(before) | set(after)
+              if before.get(k) != after.get(k)
+          )
 
-              test_env = os.environ.copy()
-              test_env.update({
-                  "HOME": str(sandbox),
-                  "TMPDIR": str(sandbox),
-                  "XDG_CACHE_HOME": str(
-                      sandbox / "cache"
-                  ),
-                  "X1000_DIAGNOSTIC_ONLY": "1",
-                  "X1000_DISABLE_WRITES": "1",
-                  "X1000_DISABLE_BETS": "1",
-                  "X1000_DISABLE_FIGE": "1",
-                  "X1000_DISABLE_DEPLOY": "1",
-                  "X1000_PRODUCTION_PORT": "8765",
-                  "X1000_TEST_PORT": "18765",
-                  "PYTHONDONTWRITEBYTECODE": "1"
-              })
-
-              report["sandbox"] = {
-                  "enabled": True,
-                  "files_copied": copied,
-                  "protected_files_copied": False,
-                  "network_isolation_enforced": False
-              }
-
-              # Execution uniquement si le contrat
-              # --self-test est explicitement detecte.
-              for name, data in report["engines"].items():
-                  if len(data["candidates"]) != 1:
-                      continue
-
-                  path = data["candidates"][0]
-                  contract = data["contracts"].get(
-                      path, {}
-                  )
-
-                  if not contract.get(
-                      "self_test_declared", False
-                  ):
-                      data["reason"] = (
-                          "Contrat --self-test absent"
-                      )
-                      continue
-
-                  if protected(path):
-                      data["reason"] = (
-                          "Chemin protege; test ignore"
-                      )
-                      continue
-
-                  # Les imports ou effets de bord ne
-                  # sont pas prouves sans danger par AST.
-                  # Execution automatique des moteurs
-                  # desactivee jusqu'a validation du
-                  # contrat exact.
-                  data["reason"] = (
-                      "Self-test detecte mais execution "
-                      "non autorisee sans audit "
-                      "des effets de bord"
-                  )
-
-              # Le central est inventorie, mais
-              # n'est pas lance arbitrairement.
-              report["central"]["reason"] = (
-                  "Contrat d'execution a valider "
-                  "avant tout lancement"
-              )
-
-              # Controle du port temporaire.
-              try:
-                  with socket.socket(
-                      socket.AF_INET,
-                      socket.SOCK_STREAM
-                  ) as sock:
-                      sock.bind(
-                          ("127.0.0.1", 18765)
-                      )
-                  report["api"][
-                      "temporary_port_ok"
-                  ] = True
-              except OSError as exc:
-                  report["api"][
-                      "temporary_port_ok"
-                  ] = False
-                  report["warnings"].append(
-                      "Port temporaire: " + str(exc)
-                  )
-
-              # Test HTTP seulement si une application
-              # ASGI unique est identifiee et que ses
-              # dependances sont disponibles.
-              asgi = sorted(set(asgi_candidates))
-              if len(asgi) != 1:
-                  report["api"]["http_reason"] = (
-                      "Application ASGI absente "
-                      "ou ambigue"
-                  )
-              elif protected(asgi[0]):
-                  report["api"]["http_reason"] = (
-                      "Application situee dans "
-                      "un chemin protege"
-                  )
-              else:
-                  # Aucun import dynamique sans
-                  # verification des effets de bord.
-                  report["api"]["http_reason"] = (
-                      "ASGI identifiee; lancement "
-                      "differe jusqu'a validation "
-                      "des imports et dependances"
-                  )
-
-          # Verification finale du depot original.
-          after = inventory(ROOT)
           protected_after = {
               k: v for k, v in after.items()
-              if protected(k)
+              if is_protected(k)
           }
 
           protected_ok = (
               protected_before == protected_after
           )
-          repository_ok = before == after
 
           report["integrity"] = {
-              "protected_unchanged": protected_ok,
-              "repository_unchanged": repository_ok,
+              "repository_unchanged":
+                  before == after,
+              "protected_unchanged":
+                  protected_ok,
+              "changed_files": changed,
               "files_before": len(before),
-              "files_after": len(after),
-              "protected_count": len(
-                  protected_before
-              ),
-              "protected_hashes_before":
-                  protected_before,
-              "protected_hashes_after":
-                  protected_after
+              "files_after": len(after)
           }
 
           report["rollback"] = {
-              "required": not repository_ok,
+              "required": bool(changed),
               "performed": False,
-              "available": False,
-              "reason": (
-                  "Diagnostic sans modification "
-                  "intentionnelle du depot; "
-                  "aucune restauration automatique"
-              )
+              "note":
+                  "Aucune modification prevue; "
+                  "aucun rollback destructif autorise"
           }
 
-          report["git"]["after"] = command(
-              ["git", "status", "--porcelain"],
-              ROOT
+          report["git"]["after"] = git_command(
+              "status", "--porcelain"
           )
+
+          git_ok = (
+              report["git"]["before"]
+              == report["git"]["after"]
+          )
+
+          report["integrity"][
+              "git_status_unchanged"
+          ] = git_ok
 
           if not protected_ok:
               report["errors"].append(
-                  "Integrite des donnees protegees"
+                  "Integrite des donnees protegees violee"
               )
 
-          if not repository_ok:
+          if changed:
               report["errors"].append(
-                  "Depot modifie pendant le diagnostic"
+                  "Fichiers du depot modifies"
               )
 
-          if (
-              report["git"]["before"].get("stdout")
-              != report["git"]["after"].get("stdout")
-          ):
+          if not git_ok:
               report["errors"].append(
-                  "Etat Git modifie"
+                  "Statut Git modifie"
               )
 
-          # Export des rapports.
-          output = OUT / "rapport-v63.json"
-          output.write_text(
+          report["result"] = (
+              "PASS"
+              if not report["errors"]
+              else "FAIL"
+          )
+
+          report_path = OUT / "diagnostic.json"
+          report_path.write_text(
               json.dumps(
                   report,
                   ensure_ascii=False,
-                  indent=2
+                  indent=2,
+                  sort_keys=True
               ),
               encoding="utf-8"
           )
 
-          checksum = OUT / "rapport-v63.sha256"
-          checksum.write_text(
-              digest(output)
-              + "  rapport-v63.json\n",
-              encoding="utf-8"
-          )
-
-          summary = [
-              "X1000 PMU COURSES V63",
-              "Depot: x1000-pmu-courses",
-              "Python: 3.11",
-              "Port production: 8765 preserve",
-              "Port test: 18765",
-              "",
-              "MOTEURS"
-          ]
-
-          for name, data in report["engines"].items():
-              summary.append(
-                  f"{name}: {data['status']} "
-                  f"(execute={data['executed']})"
-              )
-
-          summary.extend([
-              "",
-              "CENTRAL",
-              report["central"]["status"],
-              "",
-              "API"
-          ])
-
-          for route, present in (
-              report["api"]["route_presence"].items()
-          ):
-              summary.append(
-                  f"{route}: "
-                  + (
-                      "DECLAREE" if present
-                      else "NON DETECTEE"
-                  )
-              )
-
-          summary.extend([
-              "",
-              "INTEGRITE",
-              f"Proteges inchanges: {protected_ok}",
-              f"Depot inchange: {repository_ok}",
-              "",
-              "Aucun commit automatique",
-              "Aucun push automatique",
-              "Aucun deploiement",
-              "Aucun FIGE genere",
-              "Aucune archive modifiee",
-              "",
-              f"Rapport: {output}"
-          ])
-
-          summary_file = OUT / "resume-v63.txt"
-          summary_file.write_text(
-              "\n".join(summary) + "\n",
-              encoding="utf-8"
-          )
-
-          print("\n".join(summary))
+          print(json.dumps({
+              "version": "V64",
+              "result": report["result"],
+              "engines": {
+                  k: v["status"]
+                  for k, v in
+                  report["engines"].items()
+              },
+              "central":
+                  report["central"]["status"],
+              "routes":
+                  report["api"]["route_presence"],
+              "protected_unchanged":
+                  protected_ok,
+              "repository_unchanged":
+                  before == after,
+              "warnings": report["warnings"],
+              "errors": report["errors"]
+          }, indent=2))
 
           if report["errors"]:
-              for error in report["errors"]:
-                  print("::error::" + error)
               sys.exit(1)
-
-          print("DIAGNOSTIC V63 TERMINE")
           PY
 
       - name: Verifier les empreintes des rapports
-        if: always()
         env:
-          REPORT_DIR: ${{ runner.temp }}/x1000-v63
+          REPORT_DIR: ${{ runner.temp }}/x1000-v64
         run: |
           set -euo pipefail
-          cd "$REPORT_DIR"
-          if [ -f rapport-v63.sha256 ]; then
-            sha256sum -c rapport-v63.sha256
-          else
-            echo "Rapport indisponible"
-          fi
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
 
-      - name: Publier les rapports V63
+          root = pathlib.Path(
+              os.environ["REPORT_DIR"]
+          )
+          manifest = root / "manifest.json"
+          report = root / "diagnostic.json"
+
+          assert manifest.is_file()
+          assert report.is_file()
+
+          data = json.loads(
+              report.read_text(encoding="utf-8")
+          )
+
+          digest = hashlib.sha256(
+              manifest.read_bytes()
+          ).hexdigest()
+
+          assert digest == data[
+              "backup"
+          ]["manifest_sha256"]
+
+          assert data["integrity"][
+              "protected_unchanged"
+          ]
+          assert data["integrity"][
+              "repository_unchanged"
+          ]
+          assert data["integrity"][
+              "git_status_unchanged"
+          ]
+          assert data["result"] == "PASS"
+
+          print("V64: integrite confirmee")
+          PY
+
+      - name: Publier les rapports V64
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
-          name: x1000-pmu-courses-v63
-          path: ${{ runner.temp }}/x1000-v63/
+          name: x1000-pmu-courses-v64-diagnostic
+          path: ${{ runner.temp }}/x1000-v64/
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 7
 
       - name: Resume GitHub Actions
         if: always()
         env:
-          REPORT_DIR: ${{ runner.temp }}/x1000-v63
+          REPORT_DIR: ${{ runner.temp }}/x1000-v64
         run: |
-          {
-            echo "## X1000 PMU COURSES V63"
-            echo ""
-            echo "Diagnostic de preparation controlee."
-            echo ""
-            if [ -f "$REPORT_DIR/resume-v63.txt" ]; then
-              echo '```text'
-              cat "$REPORT_DIR/resume-v63.txt"
-              echo '```'
-            else
-              echo "Diagnostic incomplet."
-            fi
-            echo ""
-            echo "### Protections"
-            echo "- Port production 8765 non sollicite"
-            echo "- Pronostics et FIGEs preserves"
-            echo "- Archives preservees"
-            echo "- Aucun commit ou push automatique"
-            echo "- Aucun deploiement"
-          } >> "$GITHUB_STEP_SUMMARY"
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+
+          path = pathlib.Path(
+              os.environ["REPORT_DIR"]
+          ) / "diagnostic.json"
+
+          lines = [
+              "## X1000 PMU COURSES V64",
+              "",
+              "Mode : diagnostic statique protege",
+              "",
+              "- Aucun commit",
+              "- Aucun push",
+              "- Aucun deploiement",
+              "- Aucun FIGE",
+              "- Aucun pari",
+              "- Port 8765 non touche",
+              ""
+          ]
+
+          if path.exists():
+              report = json.loads(
+                  path.read_text(encoding="utf-8")
+              )
+              lines.append(
+                  "Resultat : " + report["result"]
+              )
+              lines.append("")
+              lines.append("### Moteurs")
+              for name, item in report[
+                  "engines"
+              ].items():
+                  lines.append(
+                      "- " + name + ": "
+                      + item["status"]
+                  )
+              lines.append("")
+              lines.append(
+                  "Noyau central : "
+                  + report["central"]["status"]
+              )
+              lines.append("")
+              lines.append("### Routes API")
+              for route, found in report[
+                  "api"
+              ]["route_presence"].items():
+                  lines.append(
+                      "- " + route + ": "
+                      + (
+                          "detectee"
+                          if found else "non detectee"
+                      )
+                  )
+              lines.append("")
+              lines.append(
+                  "Donnees protegees intactes : "
+                  + str(
+                      report["integrity"][
+                          "protected_unchanged"
+                      ]
+                  )
+              )
+              lines.append("")
+              lines.append(
+                  "Avertissements : "
+                  + str(len(report["warnings"]))
+              )
+              lines.append(
+                  "Erreurs : "
+                  + str(len(report["errors"]))
+              )
+          else:
+              lines.append(
+                  "Rapport indisponible : "
+                  "consulter les logs."
+              )
+
+          summary = os.environ.get(
+              "GITHUB_STEP_SUMMARY"
+          )
+          if summary:
+              with open(
+                  summary, "a", encoding="utf-8"
+              ) as f:
+                  f.write("\n".join(lines) + "\n")
+          else:
+              print("\n".join(lines))
+          PY
