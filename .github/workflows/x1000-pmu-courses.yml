@@ -1,6 +1,6 @@
-name: X1000 PMU COURSES - Preparation V64
+name: X1000 PMU COURSES - Preparation V65
 
-run-name: X1000 PMU COURSES V64 - Diagnostic protege
+run-name: X1000 PMU COURSES V65 - Tests isoles
 
 on:
   workflow_dispatch:
@@ -9,12 +9,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: x1000-v64-${{ github.ref }}
+  group: x1000-v65-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  diagnostic:
-    name: X1000 V64 - Diagnostic et integrite
+  validation-v65:
+    name: X1000 V65 - M1-M5 API Collecte Integrite
     runs-on: ubuntu-24.04
     timeout-minutes: 25
 
@@ -25,8 +25,9 @@ jobs:
     env:
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
+      PYTHONNOUSERSITE: "1"
       X1000_PROJECT: x1000-pmu-courses
-      X1000_VERSION: V64
+      X1000_VERSION: V65
       X1000_DIAGNOSTIC_ONLY: "1"
       X1000_DISABLE_WRITES: "1"
       X1000_DISABLE_BETS: "1"
@@ -34,9 +35,13 @@ jobs:
       X1000_DISABLE_DEPLOY: "1"
       X1000_PRODUCTION_PORT: "8765"
       X1000_TEST_PORT: "18765"
+      X1000_SOURCE_URL: ""
+      X1000_ALLOWED_HOSTS: ""
+      X1000_CORS_ORIGINS: ""
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
 
     steps:
-      - name: Recuperer le depot en lecture seule
+      - name: Recuperer le depot sans credentials
         uses: actions/checkout@v6
         with:
           persist-credentials: false
@@ -47,685 +52,464 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Verifier le depot
+      - name: Verifier identite et fichiers V65
         run: |
           set -euo pipefail
+
           test "$GITHUB_REPOSITORY" = \
             "yadcaf-cloud/x1000-pmu-courses"
+
           test -d .git
+
+          echo "Depot valide"
           python --version
           git rev-parse HEAD
-          mkdir -p "$RUNNER_TEMP/x1000-v64"
 
-      - name: Diagnostic V64 en lecture seule
+          for file in \
+            moteurs.py \
+            coordination_x1000.py \
+            collecte_pmu.py \
+            api.py \
+            tests/test_v65.py
+          do
+            if [ ! -f "$file" ]; then
+              echo "::error::Fichier absent: $file"
+              exit 1
+            fi
+            if [ -L "$file" ]; then
+              echo "::error::Lien symbolique interdit: $file"
+              exit 1
+            fi
+            echo "OK: $file"
+          done
+
+      - name: Inventaire SHA256 avant tests
         env:
-          REPORT_DIR: ${{ runner.temp }}/x1000-v64
+          REPORT_DIR: ${{ runner.temp }}/x1000-v65
         run: |
           set -euo pipefail
+          mkdir -p "$REPORT_DIR"
 
           python - <<'PY'
-          import ast
-          import datetime
           import hashlib
           import json
           import os
           import pathlib
-          import re
           import subprocess
-          import sys
 
-          ROOT = pathlib.Path.cwd().resolve()
-          OUT = pathlib.Path(
-              os.environ["REPORT_DIR"]
-          ).resolve()
-          OUT.mkdir(parents=True, exist_ok=True)
+          root = pathlib.Path.cwd()
+          out = pathlib.Path(os.environ["REPORT_DIR"])
 
-          EXCLUDED = {
-              ".git", ".venv", "venv",
-              "__pycache__", ".pytest_cache",
-              ".tox", "node_modules",
-              ".mypy_cache"
-          }
+          tracked = subprocess.check_output(
+              ["git", "ls-files", "-z"]
+          ).decode().split("\0")
 
-          PROTECTED = (
-              "fige", "figé", "archive",
-              "pronostic", "selection",
-              "audit", "resultat"
+          manifest = {}
+
+          for name in tracked:
+              if not name:
+                  continue
+              path = root / name
+              if path.is_symlink():
+                  manifest[name] = "SYMLINK"
+              elif path.is_file():
+                  manifest[name] = hashlib.sha256(
+                      path.read_bytes()
+                  ).hexdigest()
+              else:
+                  manifest[name] = "MISSING"
+
+          (out / "before.json").write_text(
+              json.dumps(
+                  manifest,
+                  indent=2,
+                  sort_keys=True
+              ),
+              encoding="utf-8"
           )
 
-          EXPECTED_ROUTES = [
+          print(
+              "Fichiers suivis:",
+              len(manifest)
+          )
+          PY
+
+      - name: Preparer espace de test isole
+        env:
+          WORK_DIR: ${{ runner.temp }}/x1000-v65-work
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$WORK_DIR/tests"
+
+          cp moteurs.py "$WORK_DIR/"
+          cp coordination_x1000.py "$WORK_DIR/"
+          cp collecte_pmu.py "$WORK_DIR/"
+          cp api.py "$WORK_DIR/"
+          cp tests/test_v65.py "$WORK_DIR/tests/"
+
+          python -m venv "$WORK_DIR/.venv"
+
+          "$WORK_DIR/.venv/bin/python" -m pip \
+            install --disable-pip-version-check \
+            "fastapi>=0.115,<1" \
+            "uvicorn>=0.30,<1" \
+            "httpx>=0.27,<1" \
+            "pytest>=8,<10"
+
+          echo "Espace de test pret"
+
+      - name: Controler syntaxe et imports
+        env:
+          WORK_DIR: ${{ runner.temp }}/x1000-v65-work
+        run: |
+          set -euo pipefail
+          cd "$WORK_DIR"
+
+          .venv/bin/python - <<'PY'
+          import ast
+          import pathlib
+
+          files = [
+              "moteurs.py",
+              "coordination_x1000.py",
+              "collecte_pmu.py",
+              "api.py",
+              "tests/test_v65.py",
+          ]
+
+          for name in files:
+              source = pathlib.Path(
+                  name
+              ).read_text(encoding="utf-8")
+              ast.parse(source, filename=name)
+              print("Syntaxe OK:", name)
+          PY
+
+          .venv/bin/python - <<'PY'
+          import moteurs
+          import coordination_x1000
+          import collecte_pmu
+          import api
+
+          assert len(moteurs.MOTEURS) == 5
+          assert api.app is not None
+
+          print("Imports V65 OK")
+          PY
+
+      - name: Tester M1 a M5 et noyau central
+        env:
+          WORK_DIR: ${{ runner.temp }}/x1000-v65-work
+        run: |
+          set -euo pipefail
+          cd "$WORK_DIR"
+
+          .venv/bin/python - <<'PY'
+          from moteurs import MOTEURS
+          from coordination_x1000 import coordonner
+
+          course = {
+              "id": "TEST-V65-ISOLE",
+              "hippodrome": "TEST",
+              "partants": [
+                  {"numero": 1, "nom": "TEST"}
+              ]
+          }
+
+          assert len(MOTEURS) == 5
+
+          for moteur in MOTEURS:
+              result = moteur.analyser(course)
+              assert result["classement"] == []
+              assert result["pari"] is None
+              assert result["fige"] is False
+              assert result["statut"] != "ANALYSE_VALIDEE"
+              print(moteur.nom, "OK")
+
+          central = coordonner(course)
+
+          assert central["moteurs_consultes"] == 5
+          assert central["moteurs_valides"] == 0
+          assert central["classement"] == []
+          assert central["pari"] is None
+          assert central["fige"] is False
+
+          print("Noyau central OK")
+          PY
+
+      - name: Tester les cinq routes API
+        env:
+          WORK_DIR: ${{ runner.temp }}/x1000-v65-work
+        run: |
+          set -euo pipefail
+          cd "$WORK_DIR"
+
+          .venv/bin/python - <<'PY'
+          from fastapi.testclient import TestClient
+          from api import app
+
+          routes = [
               "/api/status",
               "/api/courses",
               "/api/selections",
               "/api/figes",
-              "/api/audits"
+              "/api/audits",
           ]
 
-          CENTRAL_NAMES = {
-              "central.py",
-              "coordination_x1000.py",
-              "integration_x1000.py",
-              "coordinateur.py",
-              "orchestrateur.py"
-          }
-
-          def sha256(path):
-              h = hashlib.sha256()
-              with path.open("rb") as f:
-                  for chunk in iter(
-                      lambda: f.read(65536), b""
-                  ):
-                      h.update(chunk)
-              return h.hexdigest()
-
-          def inventory():
-              result = {}
-              for base, dirs, files in os.walk(
-                  ROOT, followlinks=False
-              ):
-                  dirs[:] = [
-                      d for d in dirs
-                      if d not in EXCLUDED
-                      and not (
-                          pathlib.Path(base) / d
-                      ).is_symlink()
-                  ]
-                  for name in files:
-                      p = pathlib.Path(base) / name
-                      if p.is_symlink() or not p.is_file():
-                          continue
-                      rel = p.relative_to(
-                          ROOT
-                      ).as_posix()
-                      result[rel] = sha256(p)
-              return result
-
-          def is_protected(path):
-              return any(
-                  word in path.lower()
-                  for word in PROTECTED
-              )
-
-          def git_command(*args):
-              p = subprocess.run(
-                  ["git", *args],
-                  cwd=ROOT,
-                  capture_output=True,
-                  text=True,
-                  check=False,
-                  timeout=20
-              )
-              return {
-                  "code": p.returncode,
-                  "stdout": p.stdout[-2000:],
-                  "stderr": p.stderr[-2000:]
-              }
-
-          before = inventory()
-          protected_before = {
-              k: v for k, v in before.items()
-              if is_protected(k)
-          }
-
-          report = {
-              "project": "X1000 PMU COURSES",
-              "version": "V64",
-              "timestamp_utc":
-                  datetime.datetime.now(
-                      datetime.timezone.utc
-                  ).isoformat(),
-              "repository":
-                  os.environ.get("GITHUB_REPOSITORY"),
-              "mode": "static_read_only",
-              "production_port": 8765,
-              "production_port_touched": False,
-              "engines": {},
-              "central": {},
-              "syntax": {},
-              "api": {},
-              "sources": {},
-              "dependencies": {},
-              "backup": {},
-              "integrity": {},
-              "rollback": {},
-              "git": {},
-              "warnings": [],
-              "errors": []
-          }
-
-          report["git"]["before"] = git_command(
-              "status", "--porcelain"
-          )
-          report["git"]["head"] = git_command(
-              "rev-parse", "HEAD"
-          )
-
-          manifest = {
-              "files": before,
-              "protected": protected_before
-          }
-
-          manifest_path = OUT / "manifest.json"
-          manifest_path.write_text(
-              json.dumps(
-                  manifest,
-                  ensure_ascii=False,
-                  indent=2,
-                  sort_keys=True
-              ),
-              encoding="utf-8"
-          )
-
-          report["backup"] = {
-              "type": "hash_manifest",
-              "manifest_sha256": sha256(
-                  manifest_path
-              ),
-              "full_backup": False,
-              "protected_data_copied": False,
-              "note":
-                  "Inventaire SHA256 sans copie des donnees"
-          }
-
-          pyfiles = sorted(
-              p for p in before
-              if p.endswith(".py")
-          )
-
-          trees = {}
-
-          for path in pyfiles:
-              try:
-                  source = (
-                      ROOT / path
-                  ).read_text(
-                      encoding="utf-8-sig"
+          with TestClient(app) as client:
+              for route in routes:
+                  response = client.get(route)
+                  assert response.status_code == 200, (
+                      route, response.status_code
                   )
-                  trees[path] = ast.parse(
-                      source,
-                      filename=path
+                  assert isinstance(
+                      response.json(), dict
                   )
-                  report["syntax"][path] = "OK"
-              except Exception as exc:
-                  report["syntax"][path] = str(exc)
-                  report["errors"].append(
-                      "Syntaxe invalide: " + path
-                  )
+                  print(route, "HTTP 200")
 
-          for number in range(1, 6):
-              name = f"M{number}"
-              pattern = re.compile(
-                  rf"(?<![a-z0-9])m{number}"
-                  rf"(?![a-z0-9])",
-                  re.IGNORECASE
-              )
+              status = client.get(
+                  "/api/status"
+              ).json()
 
-              candidates = [
-                  p for p in pyfiles
-                  if pattern.search(p)
-              ]
+              assert status["mode"] == "LECTURE_SEULE"
+              assert status[
+                  "production_port_preserve"
+              ] == 8765
 
-              contracts = {}
+              assert client.get(
+                  "/api/courses"
+              ).json()["courses"] == []
 
-              for path in candidates:
-                  tree = trees.get(path)
-                  if tree is None:
-                      continue
+              assert client.get(
+                  "/api/selections"
+              ).json()["selections"] == []
 
-                  functions = [
-                      n.name for n in tree.body
-                      if isinstance(
-                          n,
-                          (
-                              ast.FunctionDef,
-                              ast.AsyncFunctionDef
-                          )
-                      )
-                  ]
+              assert client.get(
+                  "/api/figes"
+              ).json()["figes"] == []
 
-                  classes = [
-                      n.name for n in tree.body
-                      if isinstance(
-                          n, ast.ClassDef
-                      )
-                  ]
+              assert client.get(
+                  "/api/audits"
+              ).json()["audits"] == []
 
-                  self_test = any(
-                      isinstance(n, ast.Constant)
-                      and n.value == "--self-test"
-                      for n in ast.walk(tree)
-                  )
-
-                  contracts[path] = {
-                      "functions": functions,
-                      "classes": classes,
-                      "self_test_declared": self_test
-                  }
-
-              report["engines"][name] = {
-                  "candidates": candidates,
-                  "status": (
-                      "absent" if not candidates
-                      else "candidate_unique"
-                      if len(candidates) == 1
-                      else "ambiguous"
-                  ),
-                  "contracts": contracts,
-                  "executed": False,
-                  "validated": False
-              }
-
-              if not candidates:
-                  report["warnings"].append(
-                      name + ": moteur non detecte"
-                  )
-
-          central = [
-              p for p in pyfiles
-              if pathlib.Path(
-                  p
-              ).name.lower() in CENTRAL_NAMES
-          ]
-
-          report["central"] = {
-              "candidates": central,
-              "status": (
-                  "absent" if not central
-                  else "candidate_unique"
-                  if len(central) == 1
-                  else "ambiguous"
-              ),
-              "executed": False,
-              "validated": False
-          }
-
-          if not central:
-              report["warnings"].append(
-                  "Noyau central non detecte"
-              )
-
-          routes = {}
-          asgi_candidates = []
-
-          for path, tree in trees.items():
-              for node in ast.walk(tree):
-                  if isinstance(node, ast.Assign):
-                      if any(
-                          isinstance(t, ast.Name)
-                          and t.id == "app"
-                          for t in node.targets
-                      ):
-                          value = node.value
-                          if isinstance(
-                              value, ast.Call
-                          ):
-                              fn = value.func
-                              if (
-                                  isinstance(
-                                      fn, ast.Name
-                                  )
-                                  and fn.id in {
-                                      "FastAPI",
-                                      "Starlette"
-                                  }
-                              ):
-                                  asgi_candidates.append(
-                                      path
-                                  )
-
-                  if not isinstance(
-                      node,
-                      (
-                          ast.FunctionDef,
-                          ast.AsyncFunctionDef
-                      )
-                  ):
-                      continue
-
-                  for dec in node.decorator_list:
-                      if not isinstance(
-                          dec, ast.Call
-                      ):
-                          continue
-                      if not isinstance(
-                          dec.func, ast.Attribute
-                      ):
-                          continue
-                      if dec.func.attr not in {
-                          "get", "post",
-                          "put", "delete",
-                          "patch", "route",
-                          "api_route"
-                      }:
-                          continue
-                      if not dec.args:
-                          continue
-
-                      arg = dec.args[0]
-                      if (
-                          isinstance(
-                              arg, ast.Constant
-                          )
-                          and isinstance(
-                              arg.value, str
-                          )
-                      ):
-                          routes.setdefault(
-                              arg.value, []
-                          ).append({
-                              "file": path,
-                              "handler": node.name,
-                              "method": dec.func.attr
-                          })
-
-          report["api"] = {
-              "expected_routes": EXPECTED_ROUTES,
-              "declared_routes": routes,
-              "route_presence": {
-                  route: route in routes
-                  for route in EXPECTED_ROUTES
-              },
-              "asgi_candidates": sorted(
-                  set(asgi_candidates)
-              ),
-              "http_tested": False,
-              "asgi_tested": False,
-              "note":
-                  "Detection statique sans import ni serveur"
-          }
-
-          domains = set()
-          domain_pattern = re.compile(
-              r"https?://([a-zA-Z0-9.-]+)"
-          )
-
-          for path in pyfiles:
-              content = (
-                  ROOT / path
-              ).read_text(
-                  encoding="utf-8",
-                  errors="replace"
-              )
-              domains.update(
-                  domain_pattern.findall(content)
-              )
-
-          report["sources"] = {
-              "declared_domains": sorted(domains),
-              "authorized_domains": [],
-              "authorization_verified": False,
-              "http_tested": False,
-              "note":
-                  "Aucun appel aux sources PMU"
-          }
-
-          manifests = sorted(
-              p for p in before
-              if (
-                  pathlib.Path(p).name.startswith(
-                      "requirements"
-                  )
-                  and p.endswith(".txt")
-              )
-              or pathlib.Path(p).name == (
-                  "pyproject.toml"
-              )
-          )
-
-          report["dependencies"] = {
-              "manifests": manifests,
-              "installed": False
-          }
-
-          after = inventory()
-
-          changed = sorted(
-              k for k in set(before) | set(after)
-              if before.get(k) != after.get(k)
-          )
-
-          protected_after = {
-              k: v for k, v in after.items()
-              if is_protected(k)
-          }
-
-          protected_ok = (
-              protected_before == protected_after
-          )
-
-          report["integrity"] = {
-              "repository_unchanged":
-                  before == after,
-              "protected_unchanged":
-                  protected_ok,
-              "changed_files": changed,
-              "files_before": len(before),
-              "files_after": len(after)
-          }
-
-          report["rollback"] = {
-              "required": bool(changed),
-              "performed": False,
-              "note":
-                  "Aucune modification prevue; "
-                  "aucun rollback destructif autorise"
-          }
-
-          report["git"]["after"] = git_command(
-              "status", "--porcelain"
-          )
-
-          git_ok = (
-              report["git"]["before"]
-              == report["git"]["after"]
-          )
-
-          report["integrity"][
-              "git_status_unchanged"
-          ] = git_ok
-
-          if not protected_ok:
-              report["errors"].append(
-                  "Integrite des donnees protegees violee"
-              )
-
-          if changed:
-              report["errors"].append(
-                  "Fichiers du depot modifies"
-              )
-
-          if not git_ok:
-              report["errors"].append(
-                  "Statut Git modifie"
-              )
-
-          report["result"] = (
-              "PASS"
-              if not report["errors"]
-              else "FAIL"
-          )
-
-          report_path = OUT / "diagnostic.json"
-          report_path.write_text(
-              json.dumps(
-                  report,
-                  ensure_ascii=False,
-                  indent=2,
-                  sort_keys=True
-              ),
-              encoding="utf-8"
-          )
-
-          print(json.dumps({
-              "version": "V64",
-              "result": report["result"],
-              "engines": {
-                  k: v["status"]
-                  for k, v in
-                  report["engines"].items()
-              },
-              "central":
-                  report["central"]["status"],
-              "routes":
-                  report["api"]["route_presence"],
-              "protected_unchanged":
-                  protected_ok,
-              "repository_unchanged":
-                  before == after,
-              "warnings": report["warnings"],
-              "errors": report["errors"]
-          }, indent=2))
-
-          if report["errors"]:
-              sys.exit(1)
+          print("Cinq routes validees en ASGI")
+          print("Aucun serveur reseau demarre")
           PY
 
-      - name: Verifier les empreintes des rapports
+      - name: Tester collecte sans source PMU
         env:
-          REPORT_DIR: ${{ runner.temp }}/x1000-v64
+          WORK_DIR: ${{ runner.temp }}/x1000-v65-work
         run: |
           set -euo pipefail
+          cd "$WORK_DIR"
+
+          .venv/bin/python - <<'PY'
+          import os
+          from collecte_pmu import (
+              collecter,
+              verifier_url,
+              CollecteErreur,
+          )
+
+          os.environ["X1000_SOURCE_URL"] = ""
+          os.environ["X1000_ALLOWED_HOSTS"] = ""
+
+          result = collecter()
+
+          assert result["courses"] == []
+          assert result["statut"] == (
+              "SOURCE_NON_CONFIGUREE"
+          )
+
+          for url in [
+              "http://example.com/api",
+              "https://localhost/api",
+              "https://127.0.0.1/api",
+          ]:
+              try:
+                  verifier_url(url)
+              except CollecteErreur:
+                  pass
+              else:
+                  raise AssertionError(
+                      "URL non autorisee acceptee"
+                  )
+
+          print("Collecte desactivee OK")
+          print("Aucun appel distant effectue")
+          PY
+
+      - name: Executer tests pytest V65
+        env:
+          WORK_DIR: ${{ runner.temp }}/x1000-v65-work
+          REPORT_DIR: ${{ runner.temp }}/x1000-v65
+        run: |
+          set -euo pipefail
+          cd "$WORK_DIR"
+
+          .venv/bin/python -m pytest \
+            tests/test_v65.py \
+            -v \
+            -p no:cacheprovider \
+            --junitxml="$REPORT_DIR/pytest.xml"
+
+      - name: Verifier integrite du depot
+        if: always()
+        env:
+          REPORT_DIR: ${{ runner.temp }}/x1000-v65
+        run: |
+          set -euo pipefail
+
           python - <<'PY'
           import hashlib
           import json
           import os
           import pathlib
+          import subprocess
+          import sys
 
-          root = pathlib.Path(
-              os.environ["REPORT_DIR"]
+          root = pathlib.Path.cwd()
+          out = pathlib.Path(os.environ["REPORT_DIR"])
+          before_path = out / "before.json"
+
+          if not before_path.exists():
+              print("Inventaire initial indisponible")
+              sys.exit(1)
+
+          before = json.loads(
+              before_path.read_text(
+                  encoding="utf-8"
+              )
           )
-          manifest = root / "manifest.json"
-          report = root / "diagnostic.json"
 
-          assert manifest.is_file()
-          assert report.is_file()
+          after = {}
 
-          data = json.loads(
-              report.read_text(encoding="utf-8")
+          for name in before:
+              path = root / name
+              if path.is_symlink():
+                  after[name] = "SYMLINK"
+              elif path.is_file():
+                  after[name] = hashlib.sha256(
+                      path.read_bytes()
+                  ).hexdigest()
+              else:
+                  after[name] = "MISSING"
+
+          changed = [
+              name for name in before
+              if before[name] != after[name]
+          ]
+
+          git_status = subprocess.run(
+              ["git", "status", "--porcelain"],
+              capture_output=True,
+              text=True,
+              check=False
           )
 
-          digest = hashlib.sha256(
-              manifest.read_bytes()
-          ).hexdigest()
+          report = {
+              "project": "X1000 PMU COURSES",
+              "version": "V65",
+              "tracked_files_unchanged":
+                  not changed,
+              "changed_files": changed,
+              "git_status_clean": (
+                  git_status.returncode == 0
+                  and not git_status.stdout.strip()
+              ),
+              "production_port_touched": False,
+              "deployment": False,
+              "commit": False,
+              "push": False,
+              "fige_created": False,
+              "protected_files_modified":
+                  bool(changed),
+              "result": "PASS" if (
+                  not changed
+                  and git_status.returncode == 0
+                  and not git_status.stdout.strip()
+              ) else "FAIL"
+          }
 
-          assert digest == data[
-              "backup"
-          ]["manifest_sha256"]
+          (out / "integrity.json").write_text(
+              json.dumps(
+                  report,
+                  indent=2,
+                  ensure_ascii=False
+              ),
+              encoding="utf-8"
+          )
 
-          assert data["integrity"][
-              "protected_unchanged"
-          ]
-          assert data["integrity"][
-              "repository_unchanged"
-          ]
-          assert data["integrity"][
-              "git_status_unchanged"
-          ]
-          assert data["result"] == "PASS"
+          print(json.dumps(report, indent=2))
 
-          print("V64: integrite confirmee")
+          if report["result"] != "PASS":
+              sys.exit(1)
           PY
 
-      - name: Publier les rapports V64
+      - name: Publier rapport V65
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: x1000-pmu-courses-v64-diagnostic
-          path: ${{ runner.temp }}/x1000-v64/
+          name: x1000-pmu-courses-v65-tests
+          path: |
+            ${{ runner.temp }}/x1000-v65/pytest.xml
+            ${{ runner.temp }}/x1000-v65/integrity.json
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Resume GitHub Actions
+      - name: Resume des controles V65
         if: always()
         env:
-          REPORT_DIR: ${{ runner.temp }}/x1000-v64
+          REPORT_DIR: ${{ runner.temp }}/x1000-v65
         run: |
           python - <<'PY'
           import json
           import os
           import pathlib
 
-          path = pathlib.Path(
+          out = pathlib.Path(
               os.environ["REPORT_DIR"]
-          ) / "diagnostic.json"
+          )
+          path = out / "integrity.json"
 
           lines = [
-              "## X1000 PMU COURSES V64",
+              "## X1000 PMU COURSES V65",
               "",
-              "Mode : diagnostic statique protege",
+              "Tests en isolation uniquement.",
               "",
-              "- Aucun commit",
-              "- Aucun push",
-              "- Aucun deploiement",
+              "- M1 a M5 : tests sans pronostics",
+              "- Noyau central : test sans arbitrage",
+              "- API : cinq routes ASGI",
+              "- Collecte PMU : desactivee",
+              "- Port 8765 : non utilise",
               "- Aucun FIGE",
-              "- Aucun pari",
-              "- Port 8765 non touche",
-              ""
+              "- Aucun commit ni push",
+              "- Aucun deploiement",
+              "",
           ]
 
           if path.exists():
-              report = json.loads(
+              data = json.loads(
                   path.read_text(encoding="utf-8")
               )
               lines.append(
-                  "Resultat : " + report["result"]
-              )
-              lines.append("")
-              lines.append("### Moteurs")
-              for name, item in report[
-                  "engines"
-              ].items():
-                  lines.append(
-                      "- " + name + ": "
-                      + item["status"]
-                  )
-              lines.append("")
-              lines.append(
-                  "Noyau central : "
-                  + report["central"]["status"]
-              )
-              lines.append("")
-              lines.append("### Routes API")
-              for route, found in report[
-                  "api"
-              ]["route_presence"].items():
-                  lines.append(
-                      "- " + route + ": "
-                      + (
-                          "detectee"
-                          if found else "non detectee"
-                      )
-                  )
-              lines.append("")
-              lines.append(
-                  "Donnees protegees intactes : "
-                  + str(
-                      report["integrity"][
-                          "protected_unchanged"
-                      ]
-                  )
-              )
-              lines.append("")
-              lines.append(
-                  "Avertissements : "
-                  + str(len(report["warnings"]))
-              )
-              lines.append(
-                  "Erreurs : "
-                  + str(len(report["errors"]))
+                  "Integrite : " + data["result"]
               )
           else:
               lines.append(
-                  "Rapport indisponible : "
-                  "consulter les logs."
+                  "Integrite : non verifiee"
               )
 
           summary = os.environ.get(
               "GITHUB_STEP_SUMMARY"
           )
+
           if summary:
               with open(
-                  summary, "a", encoding="utf-8"
+                  summary,
+                  "a",
+                  encoding="utf-8"
               ) as f:
                   f.write("\n".join(lines) + "\n")
           else:
